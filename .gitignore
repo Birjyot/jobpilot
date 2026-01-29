@@ -1,0 +1,31 @@
+# Python
+venv/
+env/
+VENV/
+venv*/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+instance/
+.env
+
+# Node / Next
+node_modules/
+.next/
+.vercel/
+dist/
+build/
+package-lock.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Misc
+*.sqlite3
