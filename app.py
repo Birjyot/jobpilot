@@ -3,9 +3,26 @@ from flask_cors import CORS
 from models import db, JobApplication
 from datetime import datetime
 import random
+import google.generativeai as genai
+import os
+import requests
+from bs4 import BeautifulSoup
+import json
+# Import the function from our new file
+from backend.parsing_utils import parse_job_url
+
+# Configure Gemini
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 
 app = Flask(__name__)
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 CORS(app)
+
+# Register the new route manually
+app.add_url_rule('/api/jobs/parse', view_func=parse_job_url, methods=['POST'])
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///jobs.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -131,26 +148,24 @@ def generate_cover_letter():
     data = request.get_json()
     company = data.get('company', 'the company')
     position = data.get('position', 'this position')
+    job_description = data.get('job_description', 'Standard software engineering role')
     
-    cover_letter = f"""Dear Hiring Manager,
+    try:
+        model = genai.GenerativeModel('gemini-pro')
+        prompt = f"""
+        Write a professional cover letter for a {position} role at {company}.
+        My skills: Python, React, JavaScript, Full Stack Development.
+        Job Description Summary: {job_description}
+        Make it enthusiastic but professional. Limit to 300 words.
+        """
+        
+        response = model.generate_content(prompt)
+        cover_letter = response.text
+    except Exception as e:
+        # Fallback if API fails or key is missing
+        print(f"Gemini API Error: {e}")
+        cover_letter = f"Dear Hiring Manager,\n\nI am writing to express my strong interest in the {position} position at {company}..."
 
-I am writing to express my strong interest in the {position} position at {company}. With my background in software development and proven track record of delivering high-quality solutions, I am confident I would be a valuable addition to your team.
-
-Throughout my career, I have developed expertise in full-stack development, working with modern technologies including Python, JavaScript, React, and various databases. I am particularly drawn to {company}'s innovative approach and commitment to excellence.
-
-Key highlights of my qualifications:
-- Strong foundation in software engineering principles and best practices
-- Experience with agile methodologies and collaborative development
-- Proven ability to learn new technologies quickly and adapt to changing requirements
-- Excellent problem-solving skills and attention to detail
-
-I am excited about the opportunity to contribute to {company}'s continued success and would welcome the chance to discuss how my skills align with your needs.
-
-Thank you for considering my application. I look forward to speaking with you soon.
-
-Best regards,
-[Your Name]"""
-    
     return jsonify({
         'cover_letter': cover_letter,
         'generated_at': datetime.utcnow().isoformat()
@@ -161,50 +176,27 @@ def generate_interview_questions():
     data = request.get_json()
     position = data.get('position', 'Software Engineer')
     
-    general_questions = [
-        "Tell me about yourself and your background.",
-        "Why are you interested in this position?",
-        "What are your greatest strengths?",
-        "Where do you see yourself in 5 years?",
-        "Why should we hire you?"
-    ]
-    
-    technical_questions = {
-        'software engineer': [
-            "Explain the difference between SQL and NoSQL databases.",
-            "What is RESTful API design?",
-            "How do you handle errors in your code?",
-            "Describe your experience with version control (Git).",
-            "What's your approach to writing clean, maintainable code?"
-        ],
-        'data scientist': [
-            "Explain the bias-variance tradeoff.",
-            "How do you handle missing data?",
-            "What's your experience with machine learning algorithms?",
-            "Describe a data analysis project you've worked on.",
-            "How do you validate model performance?"
-        ]
-    }
-    
-    position_lower = position.lower()
-    role_type = 'software engineer'
-    
-    for key in technical_questions.keys():
-        if key in position_lower:
-            role_type = key
-            break
-    
-    questions = {
-        'general': general_questions,
-        'technical': technical_questions.get(role_type, technical_questions['software engineer']),
-        'behavioral': [
-            "Tell me about a time you faced a challenge at work.",
-            "Describe a situation where you had to work with a difficult team member.",
-            "Give an example of when you showed leadership.",
-            "Tell me about a project you're most proud of.",
-            "How do you handle tight deadlines?"
-        ]
-    }
+    try:
+        model = genai.GenerativeModel('gemini-pro')
+        prompt = f"""
+        Generate 3 technical and 2 behavioral interview questions for a {position} role.
+        Return the result as a JSON object with keys: 'technical' (list of strings) and 'behavioral' (list of strings).
+        Do not include markdown formatting like ```json.
+        """
+        
+        response = model.generate_content(prompt)
+        # basic cleanup if the model adds markdown
+        text = response.text.replace('```json', '').replace('```', '').strip()
+        import json
+        questions = json.loads(text)
+        
+    except Exception as e:
+        print(f"Gemini API Error: {e}")
+        # Fallback
+        questions = {
+            'technical': ["Tell me about your experience.", "What are your strengths?"],
+            'behavioral': ["Describe a challenge you faced."]
+        }
     
     return jsonify({
         'questions': questions,

@@ -13,6 +13,7 @@ class JobApplication(db.Model):
     job_url = db.Column(db.String(500))
     salary_range = db.Column(db.String(50))
     notes = db.Column(db.Text)
+    platform = db.Column(db.String(50))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -27,6 +28,7 @@ class JobApplication(db.Model):
             'job_url': self.job_url,
             'salary_range': self.salary_range,
             'notes': self.notes,
+            'platform': self.platform,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S')
         }
