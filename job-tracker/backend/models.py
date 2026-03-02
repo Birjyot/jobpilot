@@ -5,6 +5,7 @@ db = SQLAlchemy()
 
 class JobApplication(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(100), nullable=True)  # user email from Google OAuth
     company = db.Column(db.String(100), nullable=False)
     position = db.Column(db.String(100), nullable=False)
     location = db.Column(db.String(100))
@@ -16,10 +17,11 @@ class JobApplication(db.Model):
     platform = db.Column(db.String(50))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     def to_dict(self):
         return {
             'id': self.id,
+            'user_id': self.user_id,
             'company': self.company,
             'position': self.position,
             'location': self.location,

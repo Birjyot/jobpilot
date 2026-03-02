@@ -21,20 +21,21 @@ db.init_app(app)
 api_key = os.environ.get("GEMINI_API_KEY")
 genai.configure(api_key=api_key)
 
+def get_user_id():
+    """Get user email from request headers."""
+    return request.headers.get('X-User-Email', '')
+
 def get_real_model():
     """Helper to find the best available model for the current key."""
     try:
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # Priority list
         for preferred in ['models/gemini-1.5-flash', 'models/gemini-1.5-pro', 'models/gemini-pro']:
             if preferred in available_models:
                 return genai.GenerativeModel(preferred)
-        # Fallback to the first available if none of the preferred are found
         if available_models:
             return genai.GenerativeModel(available_models[0])
     except Exception as e:
         print(f"DEBUG: Error listing models: {e}")
-    # Final fallback to standard name
     return genai.GenerativeModel('gemini-pro')
 
 with app.app_context():
@@ -44,7 +45,13 @@ with app.app_context():
         db.session.execute(db.text('ALTER TABLE job_application ADD COLUMN platform VARCHAR(50)'))
         db.session.commit()
     except Exception:
-        pass # Column likely already exists
+        pass
+    # Ensure user_id column exists
+    try:
+        db.session.execute(db.text('ALTER TABLE job_application ADD COLUMN user_id VARCHAR(100)'))
+        db.session.commit()
+    except Exception:
+        pass
 
 @app.route("/", methods=["GET"])
 def home():
@@ -56,16 +63,18 @@ def health_check():
 
 @app.route("/api/jobs", methods=["GET"])
 def get_all_jobs():
+    user_id = get_user_id()
     status_filter = request.args.get("status")
+    query = JobApplication.query.filter_by(user_id=user_id)
     if status_filter:
-        jobs = JobApplication.query.filter_by(status=status_filter).all()
-    else:
-        jobs = JobApplication.query.all()
+        query = query.filter_by(status=status_filter)
+    jobs = query.all()
     return jsonify([job.to_dict() for job in jobs])
 
 @app.route("/api/jobs/<int:job_id>", methods=["GET"])
 def get_job(job_id):
-    job = JobApplication.query.get_or_404(job_id)
+    user_id = get_user_id()
+    job = JobApplication.query.filter_by(id=job_id, user_id=user_id).first_or_404()
     return jsonify(job.to_dict())
 
 @app.route("/api/jobs", methods=["POST"])
@@ -74,6 +83,7 @@ def create_job():
     if not data.get("company") or not data.get("position"):
         return jsonify({"error": "Company and position are required"}), 400
     new_job = JobApplication(
+        user_id=get_user_id(),
         company=data["company"],
         position=data["position"],
         location=data.get("location", ""),
@@ -94,7 +104,8 @@ def create_job():
 
 @app.route("/api/jobs/<int:job_id>", methods=["PUT"])
 def update_job(job_id):
-    job = JobApplication.query.get_or_404(job_id)
+    user_id = get_user_id()
+    job = JobApplication.query.filter_by(id=job_id, user_id=user_id).first_or_404()
     data = request.get_json()
     if "company" in data:
         job.company = data["company"]
@@ -118,19 +129,21 @@ def update_job(job_id):
 
 @app.route("/api/jobs/<int:job_id>", methods=["DELETE"])
 def delete_job(job_id):
-    job = JobApplication.query.get_or_404(job_id)
+    user_id = get_user_id()
+    job = JobApplication.query.filter_by(id=job_id, user_id=user_id).first_or_404()
     db.session.delete(job)
     db.session.commit()
     return jsonify({"message": "Job application deleted successfully"}), 200
 
 @app.route("/api/stats", methods=["GET"])
 def get_stats():
-    total = JobApplication.query.count()
-    applied = JobApplication.query.filter_by(status="Applied").count()
-    screening = JobApplication.query.filter_by(status="Screening").count()
-    interview = JobApplication.query.filter_by(status="Interview").count()
-    offer = JobApplication.query.filter_by(status="Offer").count()
-    rejected = JobApplication.query.filter_by(status="Rejected").count()
+    user_id = get_user_id()
+    total = JobApplication.query.filter_by(user_id=user_id).count()
+    applied = JobApplication.query.filter_by(user_id=user_id, status="Applied").count()
+    screening = JobApplication.query.filter_by(user_id=user_id, status="Screening").count()
+    interview = JobApplication.query.filter_by(user_id=user_id, status="Interview").count()
+    offer = JobApplication.query.filter_by(user_id=user_id, status="Offer").count()
+    rejected = JobApplication.query.filter_by(user_id=user_id, status="Rejected").count()
     responses = screening + interview + offer + rejected
     response_rate = round((responses / total * 100), 1) if total > 0 else 0
     return jsonify({
@@ -156,7 +169,6 @@ def generate_cover_letter():
         response = model.generate_content(prompt)
         return jsonify({"cover_letter": response.text, "generated_at": datetime.utcnow().isoformat()})
     except Exception as e:
-        # Fallback to template if API fails
         cover_letter = f"Dear Hiring Manager,\n\nI am writing to express my strong interest in the {position} position at {company}.\n\nBest regards,\n[Your Name]"
         return jsonify({"cover_letter": cover_letter, "error": str(e), "generated_at": datetime.utcnow().isoformat()})
 
@@ -174,8 +186,6 @@ def generate_interview_questions():
         prompt += ". Categorize them into 'general', 'technical', and 'behavioral'. Return the response in a structured format."
         
         response = model.generate_content(prompt)
-        # For simplicity in this demo, we'll return the text or try to parse it. 
-        # A more robust implementation would use response schema.
         return jsonify({"questions_text": response.text, "position": position, "generated_at": datetime.utcnow().isoformat()})
     except Exception as e:
         questions = {
@@ -187,7 +197,8 @@ def generate_interview_questions():
 
 @app.route("/api/ai/suggestions", methods=["GET"])
 def get_ai_suggestions():
-    jobs = JobApplication.query.all()
+    user_id = get_user_id()
+    jobs = JobApplication.query.filter_by(user_id=user_id).all()
     if not jobs:
         return jsonify({
             "suggestions": [{"type": "motivation", "priority": "medium", "message": "Start adding your job applications to get personalized AI career insights!"}],
@@ -196,9 +207,7 @@ def get_ai_suggestions():
 
     try:
         model = get_real_model()
-        
         job_list_str = "\n".join([f"- {j.position} at {j.company} (Status: {j.status}, Applied: {j.applied_date})" for j in jobs])
-        
         prompt = f"""
         I am a job seeker with the following application history:
         {job_list_str}
@@ -206,15 +215,12 @@ def get_ai_suggestions():
         Act as an elite career coach. Give me 3 concise, high-impact suggestions for my focus this week. 
         Format each suggestion as a single sentence. Focus on follow-ups, skill gaps, or interview prep based on the statuses.
         """
-        
         response = model.generate_content(prompt)
         advice_lines = [line.strip("- ").strip() for line in response.text.strip().split("\n") if line.strip()]
-        
         suggestions = []
         for line in advice_lines[:3]:
             priority = "high" if "Follow up" in line or "Interview" in line else "medium"
             suggestions.append({"type": "ai_insight", "priority": priority, "message": line})
-            
         return jsonify({"suggestions": suggestions, "generated_at": datetime.utcnow().isoformat()})
     except Exception as e:
         return jsonify({
@@ -229,18 +235,16 @@ def ai_chat():
     if not api_key:
         return jsonify({"error": "Gemini API key is not configured on the server."}), 500
 
+    user_id = get_user_id()
     data = request.get_json()
     user_message = data.get("message", "")
     history = data.get("history", [])
     
-    # Filter history to ensure it only contains valid user/model turns
     valid_history = []
     for turn in history:
         if turn.get("role") in ["user", "model"] and turn.get("parts"):
             valid_history.append(turn)
 
-    print(f"DEBUG: Processing Chat. History turns: {len(valid_history)}")
-    
     if not user_message:
         return jsonify({"error": "Message is required"}), 400
         
@@ -248,7 +252,7 @@ def ai_chat():
         model = get_real_model()
         chat = model.start_chat(history=valid_history)
         
-        jobs = JobApplication.query.all()
+        jobs = JobApplication.query.filter_by(user_id=user_id).all()
         context = "System Info: You are a career coach. The user is currently tracking these jobs: "
         if jobs:
             context += ", ".join([f"{j.position} at {j.company}" for j in jobs])
@@ -256,22 +260,12 @@ def ai_chat():
             context += "None yet."
             
         response = chat.send_message(f"{context}\n\nUser: {user_message}")
-        
-        return jsonify({
-            "response": response.text,
-            "generated_at": datetime.utcnow().isoformat()
-        })
+        return jsonify({"response": response.text, "generated_at": datetime.utcnow().isoformat()})
     except Exception as e:
         print(f"CRITICAL ERROR in AI Chat: {str(e)}")
-        # If chat session fails (often due to history format), try a one-off completion
         try:
-            print("DEBUG: Attempting fallback single-turn completion...")
             response = model.generate_content(f"{context}\n\nUser Question: {user_message}")
-            return jsonify({
-                "response": response.text,
-                "note": "Switched to single-turn due to history error",
-                "generated_at": datetime.utcnow().isoformat()
-            })
+            return jsonify({"response": response.text, "note": "Switched to single-turn due to history error", "generated_at": datetime.utcnow().isoformat()})
         except Exception as fallback_e:
             return jsonify({"error": f"AI Engine Error: {str(fallback_e)}"}), 500
 
@@ -290,7 +284,8 @@ def get_salary_estimate():
 
 @app.route("/api/analytics/trends", methods=["GET"])
 def get_application_trends():
-    jobs = JobApplication.query.all()
+    user_id = get_user_id()
+    jobs = JobApplication.query.filter_by(user_id=user_id).all()
     total = len(jobs)
     return jsonify({"monthly_applications": {}, "status_distribution": {}, "metrics": {"total_applications": total, "interview_rate": 0, "offer_rate": 0}})
 
@@ -299,7 +294,6 @@ def ai_diagnostics():
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         return jsonify({"error": "No API Key found"}), 500
-    
     try:
         genai.configure(api_key=api_key)
         models = []
