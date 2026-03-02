@@ -69,15 +69,26 @@ export default function PremiumJobTracker() {
     'Rejected': 'bg-red-100 text-red-700 border-red-200'
   };
 
+  // Helper to get auth headers
+  const authHeaders = () => ({
+    'Content-Type': 'application/json',
+    'X-User-Email': session?.user?.email || ''
+  });
+
+  // Re-fetch data when session loads
   useEffect(() => {
-    fetchJobs();
-    fetchStats();
-    fetchSuggestions();
-  }, []);
+    if (session) {
+      fetchJobs();
+      fetchStats();
+      fetchSuggestions();
+    }
+  }, [session]);
 
   const fetchJobs = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/jobs`);
+      const res = await fetch(`${API_BASE_URL}/api/jobs`, {
+        headers: authHeaders()
+      });
       const data = await res.json();
       setJobs(data);
       setLoading(false);
@@ -89,7 +100,9 @@ export default function PremiumJobTracker() {
 
   const fetchStats = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/stats`);
+      const res = await fetch(`${API_BASE_URL}/api/stats`, {
+        headers: authHeaders()
+      });
       const data = await res.json();
       setStats(data);
     } catch (error) {
@@ -99,7 +112,9 @@ export default function PremiumJobTracker() {
 
   const fetchSuggestions = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/ai/suggestions`);
+      const res = await fetch(`${API_BASE_URL}/api/ai/suggestions`, {
+        headers: authHeaders()
+      });
       const data = await res.json();
       setAiSuggestions(data.suggestions || []);
     } catch (error) {
@@ -117,7 +132,7 @@ export default function PremiumJobTracker() {
 
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify(formData)
       });
 
@@ -135,7 +150,10 @@ export default function PremiumJobTracker() {
   const handleDelete = async (id: number) => {
     if (confirm('Are you sure you want to delete this application?')) {
       try {
-        await fetch(`${API_BASE_URL}/api/jobs/${id}`, { method: 'DELETE' });
+        await fetch(`${API_BASE_URL}/api/jobs/${id}`, {
+          method: 'DELETE',
+          headers: authHeaders()
+        });
         fetchJobs();
         fetchStats();
       } catch (error) {
@@ -149,7 +167,7 @@ export default function PremiumJobTracker() {
     setFormData({
       company: job.company,
       position: job.position,
-      location: job.location, // Default to empty string if undefined
+      location: job.location,
       status: job.status,
       applied_date: job.applied_date,
       salary_range: job.salary_range,
@@ -180,7 +198,7 @@ export default function PremiumJobTracker() {
     try {
       const res = await fetch(`${API_BASE_URL}/api/ai/cover-letter`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({ company, position })
       });
       const data = await res.json();
@@ -195,7 +213,7 @@ export default function PremiumJobTracker() {
     try {
       const res = await fetch(`${API_BASE_URL}/api/ai/interview-questions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({ position })
       });
       const data = await res.json();
@@ -221,7 +239,7 @@ export default function PremiumJobTracker() {
 
       const res = await fetch(`${API_BASE_URL}/api/ai/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({ message: userMsg, history })
       });
 
@@ -311,7 +329,6 @@ export default function PremiumJobTracker() {
         {/* TAB CONTENT: DASHBOARD */}
         {activeTab === 'dashboard' && (
           <div className="animate-fade-in">
-            {/* AI Suggestions Bar */}
             {aiSuggestions.length > 0 && (
               <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl p-4 shadow-xl border border-white/20">
                 <div className="flex items-center gap-2 mb-3">
@@ -334,13 +351,10 @@ export default function PremiumJobTracker() {
               </div>
             )}
 
-
-            {/* Stats Dashboard */}
             {stats && (
               <div className="mb-8">
                 <h3 className="text-xl font-bold text-[#000926] mb-6">Analytics Overview</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
-                  {/* Chart Section */}
                   <div className="md:col-span-2 lg:col-span-2">
                     <StatsChart
                       data={[
@@ -353,8 +367,6 @@ export default function PremiumJobTracker() {
                       height="h-full"
                     />
                   </div>
-
-                  {/* Key Metrics Cards */}
                   <div className="md:col-span-2 lg:col-span-2 grid grid-cols-2 gap-4">
                     {[
                       { label: 'Total Applications', value: stats.total, icon: Target, color: 'from-[#0F52BA] to-[#A6C5D7]' },
@@ -383,7 +395,6 @@ export default function PremiumJobTracker() {
         {/* TAB CONTENT: APPLICATIONS */}
         {activeTab === 'applications' && (
           <div className="animate-fade-in">
-            {/* Action Bar */}
             <div className="flex gap-4 mb-6 flex-wrap">
               <button
                 onClick={() => setShowForm(!showForm)}
@@ -412,39 +423,16 @@ export default function PremiumJobTracker() {
               </button>
             </div>
 
-            {/* Add/Edit Form */}
             {showForm && (
               <div className="bg-white/95 backdrop-blur-xl rounded-2xl p-8 shadow-2xl mb-8 border border-white/30">
                 <h2 className="text-2xl font-bold text-[#000926] mb-6">
                   {editingJob ? 'Edit Application' : 'Add New Application'}
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <input
-                    type="text"
-                    placeholder="Company *"
-                    value={formData.company}
-                    onChange={(e) => setFormData({ ...formData, company: e.target.value })}
-                    className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors text-black placeholder:text-gray-500"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Position *"
-                    value={formData.position}
-                    onChange={(e) => setFormData({ ...formData, position: e.target.value })}
-                    className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors text-black placeholder:text-gray-500"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Location"
-                    value={formData.location}
-                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                    className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors text-black placeholder:text-gray-500"
-                  />
-                  <select
-                    value={formData.platform}
-                    onChange={(e) => setFormData({ ...formData, platform: e.target.value })}
-                    className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors text-black placeholder:text-gray-500"
-                  >
+                  <input type="text" placeholder="Company *" value={formData.company} onChange={(e) => setFormData({ ...formData, company: e.target.value })} className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors text-black placeholder:text-gray-500" />
+                  <input type="text" placeholder="Position *" value={formData.position} onChange={(e) => setFormData({ ...formData, position: e.target.value })} className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors text-black placeholder:text-gray-500" />
+                  <input type="text" placeholder="Location" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors text-black placeholder:text-gray-500" />
+                  <select value={formData.platform} onChange={(e) => setFormData({ ...formData, platform: e.target.value })} className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors text-black placeholder:text-gray-500">
                     <option>LinkedIn</option>
                     <option>Indeed</option>
                     <option>Naukri</option>
@@ -452,55 +440,22 @@ export default function PremiumJobTracker() {
                     <option>Company Portal</option>
                     <option>Other</option>
                   </select>
-                  <select
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                    className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors text-black placeholder:text-gray-500"
-                  >
+                  <select value={formData.status} onChange={(e) => setFormData({ ...formData, status: e.target.value })} className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors text-black placeholder:text-gray-500">
                     <option>Applied</option>
                     <option>Screening</option>
                     <option>Interview</option>
                     <option>Offer</option>
                     <option>Rejected</option>
                   </select>
-                  <input
-                    type="date"
-                    value={formData.applied_date}
-                    onChange={(e) => setFormData({ ...formData, applied_date: e.target.value })}
-                    className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors text-black placeholder:text-gray-500"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Salary Range"
-                    value={formData.salary_range}
-                    onChange={(e) => setFormData({ ...formData, salary_range: e.target.value })}
-                    className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors text-black placeholder:text-gray-500"
-                  />
-                  <input
-                    type="url"
-                    placeholder="Job URL"
-                    value={formData.job_url}
-                    onChange={(e) => setFormData({ ...formData, job_url: e.target.value })}
-                    className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors text-black placeholder:text-gray-500 md:col-span-2"
-                  />
-                  <textarea
-                    placeholder="Notes"
-                    value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    rows={3}
-                    className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors md:col-span-2 text-black placeholder:text-gray-500"
-                  />
+                  <input type="date" value={formData.applied_date} onChange={(e) => setFormData({ ...formData, applied_date: e.target.value })} className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors text-black placeholder:text-gray-500" />
+                  <input type="text" placeholder="Salary Range" value={formData.salary_range} onChange={(e) => setFormData({ ...formData, salary_range: e.target.value })} className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors text-black placeholder:text-gray-500" />
+                  <input type="url" placeholder="Job URL" value={formData.job_url} onChange={(e) => setFormData({ ...formData, job_url: e.target.value })} className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors text-black placeholder:text-gray-500 md:col-span-2" />
+                  <textarea placeholder="Notes" value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} rows={3} className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors md:col-span-2 text-black placeholder:text-gray-500" />
                   <div className="md:col-span-2 flex gap-3">
-                    <button
-                      onClick={handleSubmit}
-                      className="bg-[#0F52BA] hover:bg-[#0F52BA]/90 text-white px-8 py-3 rounded-xl font-medium shadow-lg transition-all"
-                    >
+                    <button onClick={handleSubmit} className="bg-[#0F52BA] hover:bg-[#0F52BA]/90 text-white px-8 py-3 rounded-xl font-medium shadow-lg transition-all">
                       {editingJob ? 'Update' : 'Add'} Application
                     </button>
-                    <button
-                      onClick={resetForm}
-                      className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-8 py-3 rounded-xl font-medium transition-all"
-                    >
+                    <button onClick={resetForm} className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-8 py-3 rounded-xl font-medium transition-all">
                       Cancel
                     </button>
                   </div>
@@ -508,7 +463,6 @@ export default function PremiumJobTracker() {
               </div>
             )}
 
-            {/* Jobs List */}
             <div className="space-y-4">
               {filteredJobs.length === 0 ? (
                 <div className="bg-white/90 backdrop-blur-xl rounded-2xl p-12 shadow-xl text-center border border-white/30">
@@ -517,82 +471,31 @@ export default function PremiumJobTracker() {
                 </div>
               ) : (
                 filteredJobs.map(job => (
-                  <div
-                    key={job.id}
-                    className="bg-white/95 backdrop-blur-xl rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all border border-white/30"
-                  >
+                  <div key={job.id} className="bg-white/95 backdrop-blur-xl rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all border border-white/30">
                     <div className="flex justify-between items-start mb-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
                           <h3 className="text-2xl font-bold text-[#000926]">{job.position}</h3>
-                          <span className={`px-4 py-1 rounded-full text-sm font-medium border-2 ${statusStyles[job.status]}`}>
-                            {job.status}
-                          </span>
+                          <span className={`px-4 py-1 rounded-full text-sm font-medium border-2 ${statusStyles[job.status]}`}>{job.status}</span>
                           {job.platform && (
-                            <span className="px-3 py-1 bg-white border border-[#A6C5D7] rounded-full text-xs font-semibold text-[#0F52BA]">
-                              {job.platform}
-                            </span>
+                            <span className="px-3 py-1 bg-white border border-[#A6C5D7] rounded-full text-xs font-semibold text-[#0F52BA]">{job.platform}</span>
                           )}
                         </div>
                         <p className="text-lg text-[#0F52BA] font-semibold">{job.company}</p>
                         {job.location && <p className="text-gray-600">📍 {job.location}</p>}
                       </div>
                     </div>
-
                     <div className="grid grid-cols-2 gap-4 text-sm mb-4 bg-gradient-to-r from-[#D6E6F3] to-transparent p-4 rounded-xl">
-                      <div className="text-gray-700">
-                        <span className="font-semibold">Applied:</span> {job.applied_date}
-                      </div>
-                      {job.salary_range && (
-                        <div className="text-gray-700">
-                          <span className="font-semibold">Salary:</span> {job.salary_range}
-                        </div>
-                      )}
+                      <div className="text-gray-700"><span className="font-semibold">Applied:</span> {job.applied_date}</div>
+                      {job.salary_range && <div className="text-gray-700"><span className="font-semibold">Salary:</span> {job.salary_range}</div>}
                     </div>
-
-                    {job.notes && (
-                      <p className="text-gray-700 text-sm mb-4 p-4 bg-blue-50/50 rounded-xl border-l-4 border-[#0F52BA]">
-                        {job.notes}
-                      </p>
-                    )}
-
+                    {job.notes && <p className="text-gray-700 text-sm mb-4 p-4 bg-blue-50/50 rounded-xl border-l-4 border-[#0F52BA]">{job.notes}</p>}
                     <div className="flex gap-3 flex-wrap">
-                      {job.job_url && (
-                        <a
-                          href={job.job_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[#0F52BA] hover:text-[#000926] font-medium text-sm transition-colors"
-                        >
-                          View Posting →
-                        </a>
-                      )}
-                      <button
-                        onClick={() => generateCoverLetter(job.company, job.position)}
-                        className="text-[#0F52BA] hover:text-[#000926] font-medium text-sm flex items-center gap-1 transition-colors"
-                      >
-                        <FileText size={16} />
-                        Generate Cover Letter
-                      </button>
-                      <button
-                        onClick={() => generateInterviewQuestions(job.position)}
-                        className="text-[#0F52BA] hover:text-[#000926] font-medium text-sm flex items-center gap-1 transition-colors"
-                      >
-                        <Brain size={16} />
-                        Interview Prep
-                      </button>
-                      <button
-                        onClick={() => handleEdit(job)}
-                        className="text-[#0F52BA] hover:text-[#000926] font-medium text-sm ml-auto transition-colors"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(job.id)}
-                        className="text-red-600 hover:text-red-800 font-medium text-sm transition-colors"
-                      >
-                        Delete
-                      </button>
+                      {job.job_url && <a href={job.job_url} target="_blank" rel="noopener noreferrer" className="text-[#0F52BA] hover:text-[#000926] font-medium text-sm transition-colors">View Posting →</a>}
+                      <button onClick={() => generateCoverLetter(job.company, job.position)} className="text-[#0F52BA] hover:text-[#000926] font-medium text-sm flex items-center gap-1 transition-colors"><FileText size={16} />Generate Cover Letter</button>
+                      <button onClick={() => generateInterviewQuestions(job.position)} className="text-[#0F52BA] hover:text-[#000926] font-medium text-sm flex items-center gap-1 transition-colors"><Brain size={16} />Interview Prep</button>
+                      <button onClick={() => handleEdit(job)} className="text-[#0F52BA] hover:text-[#000926] font-medium text-sm ml-auto transition-colors">Edit</button>
+                      <button onClick={() => handleDelete(job.id)} className="text-red-600 hover:text-red-800 font-medium text-sm transition-colors">Delete</button>
                     </div>
                   </div>
                 ))
@@ -606,32 +509,19 @@ export default function PremiumJobTracker() {
           <div className="animate-fade-in space-y-8">
             {activeTab === 'ai-tools' && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Left side: Guide/Info */}
                 <div className="lg:col-span-1 space-y-6">
                   <div className="bg-white/90 backdrop-blur-xl rounded-2xl p-8 shadow-xl border border-white/30">
                     <Brain className="text-[#0F52BA] mb-4" size={48} />
                     <h2 className="text-2xl font-bold text-[#000926] mb-4">Command Center</h2>
-                    <p className="text-gray-600 mb-6">
-                      Welcome to your AI Power Tools. Use the chat to get personalized advice or the action buttons in the Applications tab for deep dives.
-                    </p>
+                    <p className="text-gray-600 mb-6">Welcome to your AI Power Tools. Use the chat to get personalized advice or the action buttons in the Applications tab for deep dives.</p>
                     <div className="space-y-3">
-                      <div className="flex items-center gap-3 text-sm text-gray-700 bg-blue-50 p-3 rounded-lg">
-                        <Sparkles size={18} className="text-[#0F52BA]" />
-                        <span>Interactive AI Coaching</span>
-                      </div>
-                      <div className="flex items-center gap-3 text-sm text-gray-700 bg-blue-50 p-3 rounded-lg">
-                        <FileText size={18} className="text-[#0F52BA]" />
-                        <span>Real-time Cover Letters</span>
-                      </div>
-                      <div className="flex items-center gap-3 text-sm text-gray-700 bg-blue-50 p-3 rounded-lg">
-                        <Target size={18} className="text-[#0F52BA]" />
-                        <span>Smart Interview Prep</span>
-                      </div>
+                      <div className="flex items-center gap-3 text-sm text-gray-700 bg-blue-50 p-3 rounded-lg"><Sparkles size={18} className="text-[#0F52BA]" /><span>Interactive AI Coaching</span></div>
+                      <div className="flex items-center gap-3 text-sm text-gray-700 bg-blue-50 p-3 rounded-lg"><FileText size={18} className="text-[#0F52BA]" /><span>Real-time Cover Letters</span></div>
+                      <div className="flex items-center gap-3 text-sm text-gray-700 bg-blue-50 p-3 rounded-lg"><Target size={18} className="text-[#0F52BA]" /><span>Smart Interview Prep</span></div>
                     </div>
                   </div>
                 </div>
 
-                {/* Right side: Chat Interface */}
                 <div className="lg:col-span-2">
                   <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/20 overflow-hidden flex flex-col h-[450px]">
                     <div className="bg-[#000926] p-4 flex items-center gap-2 text-white">
@@ -639,7 +529,6 @@ export default function PremiumJobTracker() {
                       <h3 className="font-bold">AI Career Coach Chat</h3>
                       <span className="ml-auto text-xs text-[#A6C5D7] bg-white/10 px-2 py-1 rounded">Online | Gemini 1.5 Flash</span>
                     </div>
-
                     <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50/50">
                       {chatMessages.length === 0 ? (
                         <div className="h-full flex flex-col items-center justify-center text-center p-8 opacity-60">
@@ -650,12 +539,7 @@ export default function PremiumJobTracker() {
                       ) : (
                         chatMessages.map((msg, idx) => (
                           <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[85%] rounded-2xl p-4 shadow-sm ${msg.role === 'user'
-                              ? 'bg-[#0F52BA] text-white rounded-tr-none'
-                              : msg.role === 'error'
-                                ? 'bg-red-50 text-red-700 border border-red-200'
-                                : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'
-                              }`}>
+                            <div className={`max-w-[85%] rounded-2xl p-4 shadow-sm ${msg.role === 'user' ? 'bg-[#0F52BA] text-white rounded-tr-none' : msg.role === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'}`}>
                               <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                             </div>
                           </div>
@@ -671,24 +555,10 @@ export default function PremiumJobTracker() {
                         </div>
                       )}
                     </div>
-
                     <div className="p-4 border-t border-gray-200 bg-white">
                       <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={chatInput}
-                          onChange={(e) => setChatInput(e.target.value)}
-                          onKeyPress={(e) => e.key === 'Enter' && handleChatSend()}
-                          placeholder="Ask about SQL, interviews, or your jobs..."
-                          className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#0F52BA] outline-none text-black transition-all"
-                        />
-                        <button
-                          onClick={handleChatSend}
-                          disabled={isChatLoading || !chatInput.trim()}
-                          className="bg-[#0F52BA] text-white p-3 rounded-xl hover:bg-[#000926] transition-colors disabled:opacity-50"
-                        >
-                          <Send size={20} />
-                        </button>
+                        <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleChatSend()} placeholder="Ask about SQL, interviews, or your jobs..." className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#0F52BA] outline-none text-black transition-all" />
+                        <button onClick={handleChatSend} disabled={isChatLoading || !chatInput.trim()} className="bg-[#0F52BA] text-white p-3 rounded-xl hover:bg-[#000926] transition-colors disabled:opacity-50"><Send size={20} /></button>
                       </div>
                     </div>
                   </div>
@@ -723,12 +593,7 @@ export default function PremiumJobTracker() {
             <div className="bg-white rounded-2xl p-8 max-w-2xl w-full max-h-[80vh] overflow-auto">
               <h2 className="text-2xl font-bold text-[#000926] mb-4">Generated Cover Letter</h2>
               <pre className="whitespace-pre-wrap text-gray-700 mb-6">{coverLetter}</pre>
-              <button
-                onClick={() => setShowCoverLetter(false)}
-                className="bg-[#0F52BA] text-white px-6 py-2 rounded-xl"
-              >
-                Close
-              </button>
+              <button onClick={() => setShowCoverLetter(false)} className="bg-[#0F52BA] text-white px-6 py-2 rounded-xl">Close</button>
             </div>
           </div>
         )}
@@ -738,50 +603,27 @@ export default function PremiumJobTracker() {
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-8 max-w-2xl w-full max-h-[80vh] overflow-auto">
               <h2 className="text-2xl font-bold text-[#000926] mb-4">Interview Preparation Questions</h2>
-
               <div className="space-y-6">
                 {interviewQuestions.questions_text ? (
-                  <div className="prose max-w-none text-gray-700 whitespace-pre-wrap">
-                    {interviewQuestions.questions_text}
-                  </div>
+                  <div className="prose max-w-none text-gray-700 whitespace-pre-wrap">{interviewQuestions.questions_text}</div>
                 ) : (
                   <>
                     <div>
                       <h3 className="text-lg font-bold text-[#0F52BA] mb-2">General Questions</h3>
-                      <ul className="list-disc list-inside space-y-1 text-gray-700">
-                        {interviewQuestions.general?.map((q: string, i: number) => (
-                          <li key={i}>{q}</li>
-                        ))}
-                      </ul>
+                      <ul className="list-disc list-inside space-y-1 text-gray-700">{interviewQuestions.general?.map((q: string, i: number) => <li key={i}>{q}</li>)}</ul>
                     </div>
-
                     <div>
                       <h3 className="text-lg font-bold text-[#0F52BA] mb-2">Technical Questions</h3>
-                      <ul className="list-disc list-inside space-y-1 text-gray-700">
-                        {interviewQuestions.technical?.map((q: string, i: number) => (
-                          <li key={i}>{q}</li>
-                        ))}
-                      </ul>
+                      <ul className="list-disc list-inside space-y-1 text-gray-700">{interviewQuestions.technical?.map((q: string, i: number) => <li key={i}>{q}</li>)}</ul>
                     </div>
-
                     <div>
                       <h3 className="text-lg font-bold text-[#0F52BA] mb-2">Behavioral Questions</h3>
-                      <ul className="list-disc list-inside space-y-1 text-gray-700">
-                        {interviewQuestions.behavioral?.map((q: string, i: number) => (
-                          <li key={i}>{q}</li>
-                        ))}
-                      </ul>
+                      <ul className="list-disc list-inside space-y-1 text-gray-700">{interviewQuestions.behavioral?.map((q: string, i: number) => <li key={i}>{q}</li>)}</ul>
                     </div>
                   </>
                 )}
               </div>
-
-              <button
-                onClick={() => setShowInterviewQuestions(false)}
-                className="bg-[#0F52BA] text-white px-6 py-2 rounded-xl mt-6"
-              >
-                Close
-              </button>
+              <button onClick={() => setShowInterviewQuestions(false)} className="bg-[#0F52BA] text-white px-6 py-2 rounded-xl mt-6">Close</button>
             </div>
           </div>
         )}
