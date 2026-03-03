@@ -38,8 +38,8 @@ export default function StatsChart({ data, height = "h-full" }: { data: any[], h
                 </div>
             </div>
 
-            <ResponsiveContainer width="100%" height="85%">
-                <BarChart data={data} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+            <ResponsiveContainer width="100%" height="80%">
+                <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 30 }}>
                     <defs>
                         <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0%" stopColor="#0F52BA" stopOpacity={0.9} />
@@ -51,16 +51,17 @@ export default function StatsChart({ data, height = "h-full" }: { data: any[], h
                         dataKey="name"
                         axisLine={false}
                         tickLine={false}
-                        tick={{ fill: '#64748B', fontSize: 13, fontWeight: 600 }}
-                        dy={5}
+                        tick={{ fill: '#64748B', fontSize: 11, fontWeight: 600 }}
+                        dy={10}
+                        interval={0}
                     />
                     <YAxis
                         axisLine={false}
                         tickLine={false}
-                        tick={{ fill: '#64748B', fontSize: 12 }}
-                        domain={[0, 10]}
-                        ticks={[0, 2, 4, 6, 8, 10]}
+                        tick={{ fill: '#64748B', fontSize: 10 }}
+                        domain={[0, 'dataMax + 2']}
                         allowDecimals={false}
+                        width={40}
                     />
                     <Tooltip
                         cursor={{ fill: '#F1F5F9', radius: 10 }}

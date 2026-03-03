@@ -265,8 +265,8 @@ export default function PremiumJobTracker() {
                     <p className="text-xs text-[#A6C5D7]">{session.user?.email}</p>
                   </div>
                   {session.user?.image && <img src={session.user.image} alt="Profile" className="w-9 h-9 rounded-full border-2 border-[#0F52BA]" />}
-                  <button onClick={() => signOut()} className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-4 py-2 rounded-lg text-red-300 text-sm font-medium transition-all">
-                    <LogOut size={16} /> Sign Out
+                  <button onClick={() => signOut()} className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-3 py-2 sm:px-4 rounded-lg text-red-300 text-sm font-medium transition-all">
+                    <LogOut size={16} /> <span className="hidden sm:inline">Sign Out</span>
                   </button>
                 </>
               ) : (
@@ -276,9 +276,9 @@ export default function PremiumJobTracker() {
               )}
             </div>
           </div>
-          <div className="flex gap-1 mt-5 border-b border-white/10">
+          <div className="flex gap-1 mt-5 border-b border-white/10 overflow-x-auto no-scrollbar whitespace-nowrap">
             {['dashboard', 'applications', 'ai-tools', 'analytics'].map(tab => (
-              <button key={tab} onClick={() => setActiveTab(tab)} className={`px-5 py-3 font-medium text-sm transition-all capitalize ${activeTab === tab ? 'text-white border-b-2 border-[#0F52BA] bg-white/5' : 'text-[#A6C5D7] hover:text-white hover:bg-white/5'}`}>
+              <button key={tab} onClick={() => setActiveTab(tab)} className={`px-5 py-3 font-medium text-sm transition-all capitalize flex-shrink-0 ${activeTab === tab ? 'text-white border-b-2 border-[#0F52BA] bg-white/5' : 'text-[#A6C5D7] hover:text-white hover:bg-white/5'}`}>
                 {tab.replace('-', ' ')}
               </button>
             ))}
@@ -308,7 +308,7 @@ export default function PremiumJobTracker() {
                   <div className="md:col-span-2">
                     <StatsChart data={STATUSES.map(s => ({ name: s, value: (stats.by_status as any)[s] || 0 }))} height="h-64" />
                   </div>
-                  <div className="md:col-span-2 grid grid-cols-2 gap-4">
+                  <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {[
                       { label: 'Total', value: stats.total, icon: Target, color: 'from-[#0F52BA] to-[#A6C5D7]' },
                       { label: 'Interviews', value: stats.by_status.Interview, icon: Calendar, color: 'from-purple-500 to-purple-300' },
@@ -402,7 +402,7 @@ export default function PremiumJobTracker() {
                         {job.location && <p className="text-gray-500 text-sm">📍 {job.location}</p>}
                       </div>
                     </div>
-                    <div className="flex gap-6 text-sm text-gray-600 mb-3 bg-[#D6E6F3]/40 p-3 rounded-xl">
+                    <div className="flex flex-col sm:flex-row gap-2 sm:gap-6 text-sm text-gray-600 mb-3 bg-[#D6E6F3]/40 p-3 rounded-xl">
                       <span><b>Applied:</b> {job.applied_date}</span>
                       {job.salary_range && <span><b>Salary:</b> {job.salary_range}</span>}
                     </div>
@@ -597,18 +597,20 @@ export default function PremiumJobTracker() {
                 {trends.monthly_applications && Object.keys(trends.monthly_applications).length > 0 && (
                   <div className="bg-white/90 rounded-2xl p-5 shadow-xl border border-white/30">
                     <h3 className="font-bold text-[#000926] mb-4">Monthly Applications</h3>
-                    <div className="flex items-end gap-2 h-36">
-                      {Object.entries(trends.monthly_applications || {}).map(([month, count]) => {
-                        const max = Math.max(...Object.values(trends.monthly_applications || {}) as number[]);
-                        const h = max > 0 ? Math.max(((count as number) / max) * 100, 8) : 8;
-                        return (
-                          <div key={month} className="flex-1 flex flex-col items-center gap-1">
-                            <span className="text-xs font-bold text-[#0F52BA]">{count as number}</span>
-                            <div className="w-full bg-[#0F52BA] rounded-t-lg" style={{ height: `${h}%` }} />
-                            <span className="text-xs text-gray-400 text-center leading-tight">{month}</span>
-                          </div>
-                        );
-                      })}
+                    <div className="overflow-x-auto no-scrollbar">
+                      <div className="flex items-end gap-2 h-36 min-w-[400px]">
+                        {Object.entries(trends.monthly_applications || {}).map(([month, count]) => {
+                          const max = Math.max(...Object.values(trends.monthly_applications || {}) as number[]);
+                          const h = max > 0 ? Math.max(((count as number) / max) * 100, 8) : 8;
+                          return (
+                            <div key={month} className="flex-1 flex flex-col items-center gap-1">
+                              <span className="text-xs font-bold text-[#0F52BA]">{count as number}</span>
+                              <div className="w-full bg-[#0F52BA] rounded-t-lg" style={{ height: `${h}%` }} />
+                              <span className="text-xs text-gray-400 text-center leading-tight">{month}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 )}
