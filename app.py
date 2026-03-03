@@ -24,10 +24,19 @@ CORS(app)
 # Register the new route manually
 app.add_url_rule('/api/jobs/parse', view_func=parse_job_url, methods=['POST'])
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///jobs.db'
+# Configure database
+database_url = os.environ.get("DATABASE_URL", "sqlite:///jobs.db")
+if database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
+
+def get_user_id():
+    # Keep it simple: use the email from headers
+    return request.headers.get('X-User-Email', '')
 
 with app.app_context():
     db.create_all()
@@ -48,16 +57,18 @@ def health_check():
 
 @app.route('/api/jobs', methods=['GET'])
 def get_all_jobs():
+    user_id = get_user_id()
     status_filter = request.args.get('status')
+    query = JobApplication.query.filter_by(user_id=user_id)
     if status_filter:
-        jobs = JobApplication.query.filter_by(status=status_filter).all()
-    else:
-        jobs = JobApplication.query.all()
+        query = query.filter_by(status=status_filter)
+    jobs = query.all()
     return jsonify([job.to_dict() for job in jobs])
 
 @app.route('/api/jobs/<int:job_id>', methods=['GET'])
 def get_job(job_id):
-    job = JobApplication.query.get_or_404(job_id)
+    user_id = get_user_id()
+    job = JobApplication.query.filter_by(id=job_id, user_id=user_id).first_or_404()
     return jsonify(job.to_dict())
 
 @app.route('/api/jobs', methods=['POST'])
@@ -67,13 +78,15 @@ def create_job():
         return jsonify({'error': 'Company and position are required'}), 400
     
     new_job = JobApplication(
+        user_id=get_user_id(),
         company=data['company'],
         position=data['position'],
         location=data.get('location', ''),
         status=data.get('status', 'Applied'),
         job_url=data.get('job_url', ''),
         salary_range=data.get('salary_range', ''),
-        notes=data.get('notes', '')
+        notes=data.get('notes', ''),
+        platform=data.get('platform', 'LinkedIn')
     )
     
     if data.get('applied_date'):
@@ -88,23 +101,13 @@ def create_job():
 
 @app.route('/api/jobs/<int:job_id>', methods=['PUT'])
 def update_job(job_id):
-    job = JobApplication.query.get_or_404(job_id)
+    user_id = get_user_id()
+    job = JobApplication.query.filter_by(id=job_id, user_id=user_id).first_or_404()
     data = request.get_json()
     
-    if 'company' in data:
-        job.company = data['company']
-    if 'position' in data:
-        job.position = data['position']
-    if 'location' in data:
-        job.location = data['location']
-    if 'status' in data:
-        job.status = data['status']
-    if 'job_url' in data:
-        job.job_url = data['job_url']
-    if 'salary_range' in data:
-        job.salary_range = data['salary_range']
-    if 'notes' in data:
-        job.notes = data['notes']
+    for field in ['company', 'position', 'location', 'status', 'job_url', 'salary_range', 'notes', 'platform']:
+        if field in data:
+            setattr(job, field, data[field])
     
     job.updated_at = datetime.utcnow()
     db.session.commit()
@@ -112,32 +115,27 @@ def update_job(job_id):
 
 @app.route('/api/jobs/<int:job_id>', methods=['DELETE'])
 def delete_job(job_id):
-    job = JobApplication.query.get_or_404(job_id)
+    user_id = get_user_id()
+    job = JobApplication.query.filter_by(id=job_id, user_id=user_id).first_or_404()
     db.session.delete(job)
     db.session.commit()
     return jsonify({'message': 'Job application deleted successfully'}), 200
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
-    total = JobApplication.query.count()
-    applied = JobApplication.query.filter_by(status='Applied').count()
-    screening = JobApplication.query.filter_by(status='Screening').count()
-    interview = JobApplication.query.filter_by(status='Interview').count()
-    offer = JobApplication.query.filter_by(status='Offer').count()
-    rejected = JobApplication.query.filter_by(status='Rejected').count()
+    user_id = get_user_id()
+    total = JobApplication.query.filter_by(user_id=user_id).count()
+    statuses = ["Applied", "Screening", "Interview", "Offer", "Rejected"]
     
-    responses = screening + interview + offer + rejected
+    # Use Title Case for matching and pre-populate all keys
+    by_status = {s: JobApplication.query.filter_by(user_id=user_id, status=s).count() for s in statuses}
+    
+    responses = sum(by_status[s] for s in ["Screening", "Interview", "Offer", "Rejected"])
     response_rate = round((responses / total * 100), 1) if total > 0 else 0
     
     return jsonify({
         'total': total,
-        'by_status': {
-            'Applied': applied,
-            'Screening': screening,
-            'Interview': interview,
-            'Offer': offer,
-            'Rejected': rejected
-        },
+        'by_status': by_status,
         'response_rate': response_rate
     })
 
@@ -281,25 +279,35 @@ def get_salary_estimate():
 
 @app.route('/api/analytics/trends', methods=['GET'])
 def get_application_trends():
-    jobs = JobApplication.query.order_by(JobApplication.applied_date).all()
+    user_id = get_user_id()
+    jobs = JobApplication.query.filter_by(user_id=user_id).order_by(JobApplication.applied_date).all()
     
     monthly_data = {}
-    status_trends = {}
+    statuses = ["Applied", "Screening", "Interview", "Offer", "Rejected"]
+    status_trends = {s: 0 for s in statuses}
+    platform_data = {}
     
     for job in jobs:
-        month_key = job.applied_date.strftime('%Y-%m')
+        # 1. Monthly Trends
+        if job.applied_date:
+            month_key = job.applied_date.strftime('%Y-%m')
+            monthly_data[month_key] = monthly_data.get(month_key, 0) + 1
         
-        if month_key not in monthly_data:
-            monthly_data[month_key] = 0
-        monthly_data[month_key] += 1
-        
-        if job.status not in status_trends:
-            status_trends[job.status] = 0
-        status_trends[job.status] += 1
+        # 2. Status Distribution (Normalize to Title Case to match frontend)
+        status = (job.status or "Applied").strip().capitalize()
+        if status in status_trends:
+            status_trends[status] += 1
+        else:
+            # Fallback for unexpected statuses
+            status_trends[status] = status_trends.get(status, 0) + 1
+
+        # 3. Platform Distribution
+        platform = job.platform or "Other"
+        platform_data[platform] = platform_data.get(platform, 0) + 1
     
     total = len(jobs)
-    interviews = sum(1 for job in jobs if job.status == 'Interview')
-    offers = sum(1 for job in jobs if job.status == 'Offer')
+    interviews = status_trends.get('Interview', 0)
+    offers = status_trends.get('Offer', 0)
     
     interview_rate = round((interviews / total * 100), 1) if total > 0 else 0
     offer_rate = round((offers / total * 100), 1) if total > 0 else 0
@@ -307,6 +315,7 @@ def get_application_trends():
     return jsonify({
         'monthly_applications': monthly_data,
         'status_distribution': status_trends,
+        'platform_distribution': platform_data,
         'metrics': {
             'total_applications': total,
             'interview_rate': interview_rate,

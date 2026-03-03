@@ -12,6 +12,7 @@ class User(UserMixin, db.Model):
 
 class JobApplication(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(100), nullable=True)  # Store user email
     company = db.Column(db.String(100), nullable=False)
     position = db.Column(db.String(100), nullable=False)
     location = db.Column(db.String(100))
@@ -20,14 +21,14 @@ class JobApplication(db.Model):
     job_url = db.Column(db.String(500))
     salary_range = db.Column(db.String(50))
     notes = db.Column(db.Text)
+    platform = db.Column(db.String(50))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    
     
     def to_dict(self):
         return {
             'id': self.id,
+            'user_id': self.user_id,
             'company': self.company,
             'position': self.position,
             'location': self.location,
@@ -36,6 +37,7 @@ class JobApplication(db.Model):
             'job_url': self.job_url,
             'salary_range': self.salary_range,
             'notes': self.notes,
+            'platform': self.platform,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S')
         }
