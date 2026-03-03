@@ -303,6 +303,49 @@ def ai_diagnostics():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/ai/match-resume", methods=["POST"])
+def match_resume():
+    data = request.get_json()
+    resume_text = data.get("resume_text", "")
+    job_description = data.get("job_description", "")
+
+    if not resume_text or not job_description:
+        return jsonify({"error": "Both resume and job description are required"}), 400
+
+    try:
+        model = get_real_model()
+        prompt = f"""
+You are an expert ATS (Applicant Tracking System) and career coach.
+
+Analyze the following resume against the job description and return ONLY a valid JSON object with no extra text.
+
+Resume:
+{resume_text}
+
+Job Description:
+{job_description}
+
+Return this exact JSON structure:
+{{
+  "match_score": <integer 0-100>,
+  "matched_keywords": ["keyword1", "keyword2", ...],
+  "missing_keywords": ["keyword1", "keyword2", ...],
+  "suggestions": ["suggestion1", "suggestion2", "suggestion3"],
+  "summary": "<2 sentence overall assessment>"
+}}
+"""
+        response = model.generate_content(prompt)
+        text = response.text.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        import json
+        result = json.loads(text.strip())
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)

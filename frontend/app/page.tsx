@@ -49,6 +49,13 @@ export default function PremiumJobTracker() {
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
 
+  // JD Matcher state
+  const [resumeText, setResumeText] = useState('');
+  const [jobDescription, setJobDescription] = useState('');
+  const [matchResult, setMatchResult] = useState<any>(null);
+  const [isMatchLoading, setIsMatchLoading] = useState(false);
+  const [activeAiView, setActiveAiView] = useState<'chat' | 'matcher'>('chat');
+
   const [formData, setFormData] = useState({
     company: '',
     position: '',
@@ -254,6 +261,25 @@ export default function PremiumJobTracker() {
       setChatMessages(prev => [...prev, { role: 'error', content: "Connection failed. Make sure the backend is running on port 5000." }]);
     } finally {
       setIsChatLoading(false);
+    }
+  };
+
+  const handleMatchResume = async () => {
+    if (!resumeText.trim() || !jobDescription.trim()) return;
+    setIsMatchLoading(true);
+    setMatchResult(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/ai/match-resume`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ resume_text: resumeText, job_description: jobDescription })
+      });
+      const data = await res.json();
+      setMatchResult(data);
+    } catch (error) {
+      console.error('Match error:', error);
+    } finally {
+      setIsMatchLoading(false);
     }
   };
 
@@ -508,22 +534,26 @@ export default function PremiumJobTracker() {
         {(activeTab === 'ai-tools' || activeTab === 'analytics') && (
           <div className="animate-fade-in space-y-8">
             {activeTab === 'ai-tools' && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-1 space-y-6">
-                  <div className="bg-white/90 backdrop-blur-xl rounded-2xl p-8 shadow-xl border border-white/30">
-                    <Brain className="text-[#0F52BA] mb-4" size={48} />
-                    <h2 className="text-2xl font-bold text-[#000926] mb-4">Command Center</h2>
-                    <p className="text-gray-600 mb-6">Welcome to your AI Power Tools. Use the chat to get personalized advice or the action buttons in the Applications tab for deep dives.</p>
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-3 text-sm text-gray-700 bg-blue-50 p-3 rounded-lg"><Sparkles size={18} className="text-[#0F52BA]" /><span>Interactive AI Coaching</span></div>
-                      <div className="flex items-center gap-3 text-sm text-gray-700 bg-blue-50 p-3 rounded-lg"><FileText size={18} className="text-[#0F52BA]" /><span>Real-time Cover Letters</span></div>
-                      <div className="flex items-center gap-3 text-sm text-gray-700 bg-blue-50 p-3 rounded-lg"><Target size={18} className="text-[#0F52BA]" /><span>Smart Interview Prep</span></div>
-                    </div>
-                  </div>
+              <div className="space-y-6">
+                {/* Sub-tab switcher */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setActiveAiView('chat')}
+                    className={`flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all ${activeAiView === 'chat' ? 'bg-[#0F52BA] text-white shadow-lg' : 'bg-white/90 text-[#0F52BA] hover:bg-white'}`}
+                  >
+                    <MessageSquare size={18} /> AI Career Coach
+                  </button>
+                  <button
+                    onClick={() => setActiveAiView('matcher')}
+                    className={`flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all ${activeAiView === 'matcher' ? 'bg-[#0F52BA] text-white shadow-lg' : 'bg-white/90 text-[#0F52BA] hover:bg-white'}`}
+                  >
+                    <Target size={18} /> Resume–JD Matcher
+                  </button>
                 </div>
 
-                <div className="lg:col-span-2">
-                  <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/20 overflow-hidden flex flex-col h-[450px]">
+                {/* AI Chat */}
+                {activeAiView === 'chat' && (
+                  <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/20 overflow-hidden flex flex-col h-[500px]">
                     <div className="bg-[#000926] p-4 flex items-center gap-2 text-white">
                       <Brain size={20} className="text-[#0F52BA]" />
                       <h3 className="font-bold">AI Career Coach Chat</h3>
@@ -562,7 +592,112 @@ export default function PremiumJobTracker() {
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
+
+                {/* JD Matcher */}
+                {activeAiView === 'matcher' && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div className="bg-white/90 backdrop-blur-xl rounded-2xl p-6 shadow-xl border border-white/30">
+                        <label className="block text-sm font-semibold text-[#000926] mb-2">📄 Your Resume</label>
+                        <textarea
+                          value={resumeText}
+                          onChange={(e) => setResumeText(e.target.value)}
+                          placeholder="Paste your resume text here..."
+                          rows={12}
+                          className="w-full border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors text-black placeholder:text-gray-400 text-sm resize-none"
+                        />
+                      </div>
+                      <div className="bg-white/90 backdrop-blur-xl rounded-2xl p-6 shadow-xl border border-white/30">
+                        <label className="block text-sm font-semibold text-[#000926] mb-2">💼 Job Description</label>
+                        <textarea
+                          value={jobDescription}
+                          onChange={(e) => setJobDescription(e.target.value)}
+                          placeholder="Paste the job description here..."
+                          rows={12}
+                          className="w-full border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none transition-colors text-black placeholder:text-gray-400 text-sm resize-none"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleMatchResume}
+                      disabled={isMatchLoading || !resumeText.trim() || !jobDescription.trim()}
+                      className="w-full bg-[#0F52BA] hover:bg-[#000926] disabled:opacity-50 text-white py-4 rounded-xl font-semibold text-lg shadow-lg transition-all flex items-center justify-center gap-3"
+                    >
+                      {isMatchLoading ? (
+                        <>
+                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          Analyzing...
+                        </>
+                      ) : (
+                        <><Sparkles size={20} /> Analyze Match</>
+                      )}
+                    </button>
+
+                    {matchResult && !matchResult.error && (
+                      <div className="space-y-4">
+                        {/* Score */}
+                        <div className="bg-white/90 backdrop-blur-xl rounded-2xl p-6 shadow-xl border border-white/30">
+                          <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-lg font-bold text-[#000926]">Match Score</h3>
+                            <span className={`text-4xl font-black ${matchResult.match_score >= 70 ? 'text-green-500' : matchResult.match_score >= 40 ? 'text-orange-500' : 'text-red-500'}`}>
+                              {matchResult.match_score}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-4">
+                            <div
+                              className={`h-4 rounded-full transition-all ${matchResult.match_score >= 70 ? 'bg-green-500' : matchResult.match_score >= 40 ? 'bg-orange-500' : 'bg-red-500'}`}
+                              style={{ width: `${matchResult.match_score}%` }}
+                            />
+                          </div>
+                          {matchResult.summary && <p className="text-gray-600 text-sm mt-3">{matchResult.summary}</p>}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Matched Keywords */}
+                          <div className="bg-white/90 backdrop-blur-xl rounded-2xl p-6 shadow-xl border border-white/30">
+                            <h3 className="text-sm font-bold text-green-600 mb-3">✅ Matched Keywords</h3>
+                            <div className="flex flex-wrap gap-2">
+                              {matchResult.matched_keywords?.map((kw: string, i: number) => (
+                                <span key={i} className="px-3 py-1 bg-green-50 text-green-700 border border-green-200 rounded-full text-xs font-medium">{kw}</span>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Missing Keywords */}
+                          <div className="bg-white/90 backdrop-blur-xl rounded-2xl p-6 shadow-xl border border-white/30">
+                            <h3 className="text-sm font-bold text-red-600 mb-3">❌ Missing Keywords</h3>
+                            <div className="flex flex-wrap gap-2">
+                              {matchResult.missing_keywords?.map((kw: string, i: number) => (
+                                <span key={i} className="px-3 py-1 bg-red-50 text-red-700 border border-red-200 rounded-full text-xs font-medium">{kw}</span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Suggestions */}
+                        <div className="bg-white/90 backdrop-blur-xl rounded-2xl p-6 shadow-xl border border-white/30">
+                          <h3 className="text-sm font-bold text-[#0F52BA] mb-3">💡 Improvement Suggestions</h3>
+                          <div className="space-y-3">
+                            {matchResult.suggestions?.map((s: string, i: number) => (
+                              <div key={i} className="flex gap-3 p-3 bg-blue-50 rounded-xl">
+                                <span className="text-[#0F52BA] font-bold text-sm">{i + 1}.</span>
+                                <p className="text-gray-700 text-sm">{s}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {matchResult?.error && (
+                      <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">
+                        Error: {matchResult.error}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
