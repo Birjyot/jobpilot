@@ -5,6 +5,7 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 import google.generativeai as genai
+import json
 
 # Load environment variables from the root .env file
 load_dotenv(os.path.join(os.path.dirname(__file__), '../../.env'))
@@ -12,7 +13,11 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '../../.env'))
 app = Flask(__name__)
 CORS(app)
 
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///jobs.db"
+# PostgreSQL via Supabase
+database_url = os.environ.get("DATABASE_URL", "sqlite:///jobs.db")
+if database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+app.config["SQLALCHEMY_DATABASE_URI"] = database_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db.init_app(app)
@@ -40,18 +45,6 @@ def get_real_model():
 
 with app.app_context():
     db.create_all()
-    # Ensure platform column exists (quick fix for SQLite)
-    try:
-        db.session.execute(db.text('ALTER TABLE job_application ADD COLUMN platform VARCHAR(50)'))
-        db.session.commit()
-    except Exception:
-        pass
-    # Ensure user_id column exists
-    try:
-        db.session.execute(db.text('ALTER TABLE job_application ADD COLUMN user_id VARCHAR(100)'))
-        db.session.commit()
-    except Exception:
-        pass
 
 @app.route("/", methods=["GET"])
 def home():
@@ -158,14 +151,12 @@ def generate_cover_letter():
     company = data.get("company", "the company")
     position = data.get("position", "this position")
     notes = data.get("notes", "")
-    
     try:
         model = get_real_model()
         prompt = f"Write a professional and compelling cover letter for a {position} position at {company}. "
         if notes:
             prompt += f"Context about the role or my interest: {notes}. "
         prompt += "Keep it concise, professional, and highlight enthusiasm for the company. Use [Your Name] as a placeholder."
-        
         response = model.generate_content(prompt)
         return jsonify({"cover_letter": response.text, "generated_at": datetime.utcnow().isoformat()})
     except Exception as e:
@@ -177,14 +168,12 @@ def generate_interview_questions():
     data = request.get_json()
     position = data.get("position", "Software Engineer")
     company = data.get("company", "")
-    
     try:
         model = get_real_model()
         prompt = f"Generate a list of interview questions for a {position} position"
         if company:
             prompt += f" at {company}"
         prompt += ". Categorize them into 'general', 'technical', and 'behavioral'. Return the response in a structured format."
-        
         response = model.generate_content(prompt)
         return jsonify({"questions_text": response.text, "position": position, "generated_at": datetime.utcnow().isoformat()})
     except Exception as e:
@@ -204,7 +193,6 @@ def get_ai_suggestions():
             "suggestions": [{"type": "motivation", "priority": "medium", "message": "Start adding your job applications to get personalized AI career insights!"}],
             "generated_at": datetime.utcnow().isoformat()
         })
-
     try:
         model = get_real_model()
         job_list_str = "\n".join([f"- {j.position} at {j.company} (Status: {j.status}, Applied: {j.applied_date})" for j in jobs])
@@ -234,31 +222,25 @@ def ai_chat():
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         return jsonify({"error": "Gemini API key is not configured on the server."}), 500
-
     user_id = get_user_id()
     data = request.get_json()
     user_message = data.get("message", "")
     history = data.get("history", [])
-    
     valid_history = []
     for turn in history:
         if turn.get("role") in ["user", "model"] and turn.get("parts"):
             valid_history.append(turn)
-
     if not user_message:
         return jsonify({"error": "Message is required"}), 400
-        
     try:
         model = get_real_model()
         chat = model.start_chat(history=valid_history)
-        
         jobs = JobApplication.query.filter_by(user_id=user_id).all()
         context = "System Info: You are a career coach. The user is currently tracking these jobs: "
         if jobs:
             context += ", ".join([f"{j.position} at {j.company}" for j in jobs])
         else:
             context += "None yet."
-            
         response = chat.send_message(f"{context}\n\nUser: {user_message}")
         return jsonify({"response": response.text, "generated_at": datetime.utcnow().isoformat()})
     except Exception as e:
@@ -308,10 +290,8 @@ def match_resume():
     data = request.get_json()
     resume_text = data.get("resume_text", "")
     job_description = data.get("job_description", "")
-
     if not resume_text or not job_description:
         return jsonify({"error": "Both resume and job description are required"}), 400
-
     try:
         model = get_real_model()
         prompt = f"""
@@ -340,7 +320,6 @@ Return this exact JSON structure:
             text = text.split("```")[1]
             if text.startswith("json"):
                 text = text[4:]
-        import json
         result = json.loads(text.strip())
         return jsonify(result)
     except Exception as e:
