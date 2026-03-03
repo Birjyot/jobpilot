@@ -306,7 +306,7 @@ export default function PremiumJobTracker() {
                 <h3 className="text-lg font-bold text-[#000926] mb-4">Overview</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                   <div className="md:col-span-2">
-                    <StatsChart data={STATUSES.map(s => ({ name: s, value: stats.by_status[s as keyof typeof stats.by_status] }))} height="h-64" />
+                    <StatsChart data={STATUSES.map(s => ({ name: s, value: (stats.by_status as any)[s] || 0 }))} height="h-64" />
                   </div>
                   <div className="md:col-span-2 grid grid-cols-2 gap-4">
                     {[
@@ -580,11 +580,11 @@ export default function PremiumJobTracker() {
                   </div>
                 </div>
 
-                {Object.keys(trends.platform_distribution).length > 0 && (
+                {trends.platform_distribution && Object.keys(trends.platform_distribution).length > 0 && (
                   <div className="bg-white/90 rounded-2xl p-5 shadow-xl border border-white/30">
                     <h3 className="font-bold text-[#000926] mb-4">Applications by Platform</h3>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      {Object.entries(trends.platform_distribution).map(([p, c]) => (
+                      {Object.entries(trends.platform_distribution || {}).map(([p, c]) => (
                         <div key={p} className="bg-blue-50 rounded-xl p-4 text-center border border-blue-100">
                           <div className="text-2xl font-bold text-[#0F52BA]">{c as number}</div>
                           <div className="text-sm text-gray-500 mt-1">{p}</div>
@@ -594,12 +594,12 @@ export default function PremiumJobTracker() {
                   </div>
                 )}
 
-                {Object.keys(trends.monthly_applications).length > 0 && (
+                {trends.monthly_applications && Object.keys(trends.monthly_applications).length > 0 && (
                   <div className="bg-white/90 rounded-2xl p-5 shadow-xl border border-white/30">
                     <h3 className="font-bold text-[#000926] mb-4">Monthly Applications</h3>
                     <div className="flex items-end gap-2 h-36">
-                      {Object.entries(trends.monthly_applications).map(([month, count]) => {
-                        const max = Math.max(...Object.values(trends.monthly_applications) as number[]);
+                      {Object.entries(trends.monthly_applications || {}).map(([month, count]) => {
+                        const max = Math.max(...Object.values(trends.monthly_applications || {}) as number[]);
                         const h = max > 0 ? Math.max(((count as number) / max) * 100, 8) : 8;
                         return (
                           <div key={month} className="flex-1 flex flex-col items-center gap-1">
