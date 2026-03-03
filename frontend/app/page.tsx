@@ -306,7 +306,7 @@ export default function PremiumJobTracker() {
                 <h3 className="text-lg font-bold text-[#000926] mb-4">Overview</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                   <div className="md:col-span-2">
-                    <StatsChart data={STATUSES.map(s => ({ name: s, value: stats.by_status[s as keyof typeof stats.by_status] }))} height="h-full" />
+                    <StatsChart data={STATUSES.map(s => ({ name: s, value: stats.by_status[s as keyof typeof stats.by_status] }))} height="h-64" />
                   </div>
                   <div className="md:col-span-2 grid grid-cols-2 gap-4">
                     {[
