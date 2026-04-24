@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from models import db, JobApplication
+from models import db, JobApplication, User
 from datetime import datetime
 import random
 import google.generativeai as genai
@@ -12,7 +12,20 @@ import json
 from backend.parsing_utils import parse_job_url
 
 # Configure Gemini
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+api_key = os.environ.get("GEMINI_API_KEY")
+genai.configure(api_key=api_key)
+
+def get_real_model():
+    try:
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        for preferred in ['models/gemini-pro', 'models/gemini-1.5-pro', 'models/gemini-1.5-flash']:
+            if preferred in available_models:
+                return genai.GenerativeModel(preferred)
+        if available_models:
+            return genai.GenerativeModel(available_models[0])
+    except Exception as e:
+        print(f"DEBUG: Error listing models: {e}")
+    return genai.GenerativeModel('gemini-pro')
 
 app = Flask(__name__)
 # Load environment variables from .env file
@@ -37,6 +50,15 @@ db.init_app(app)
 def get_user_id():
     # Keep it simple: use the email from headers
     return request.headers.get('X-User-Email', '')
+
+def get_or_create_user(email):
+    if not email: return None
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        user = User(email=email)
+        db.session.add(user)
+        db.session.commit()
+    return user
 
 with app.app_context():
     db.create_all()
@@ -149,7 +171,7 @@ def generate_cover_letter():
     job_description = data.get('job_description', 'Standard software engineering role')
     
     try:
-        model = genai.GenerativeModel('gemini-pro')
+        model = get_real_model()
         prompt = f"""
         Write a professional cover letter for a {position} role at {company}.
         My skills: Python, React, JavaScript, Full Stack Development.
@@ -160,7 +182,9 @@ def generate_cover_letter():
         response = model.generate_content(prompt)
         cover_letter = response.text
     except Exception as e:
-        # Fallback if API fails or key is missing
+        error_msg = str(e)
+        if "429" in error_msg:
+             return jsonify({'cover_letter': f"AI Quota Exceeded. Please try again later or upgrade your plan. (Original Error: {error_msg})", 'error': '429'}), 429
         print(f"Gemini API Error: {e}")
         cover_letter = f"Dear Hiring Manager,\n\nI am writing to express my strong interest in the {position} position at {company}..."
 
@@ -175,7 +199,7 @@ def generate_interview_questions():
     position = data.get('position', 'Software Engineer')
     
     try:
-        model = genai.GenerativeModel('gemini-pro')
+        model = get_real_model()
         prompt = f"""
         Generate 3 technical and 2 behavioral interview questions for a {position} role.
         Return the result as a JSON object with keys: 'technical' (list of strings) and 'behavioral' (list of strings).
@@ -189,6 +213,9 @@ def generate_interview_questions():
         questions = json.loads(text)
         
     except Exception as e:
+        error_msg = str(e)
+        if "429" in error_msg:
+            return jsonify({"error": "Gemini API Quota Exceeded. Please try again later."}), 429
         print(f"Gemini API Error: {e}")
         # Fallback
         questions = {
@@ -204,12 +231,30 @@ def generate_interview_questions():
 
 @app.route('/api/ai/suggestions', methods=['GET'])
 def get_ai_suggestions():
-    jobs = JobApplication.query.all()
+    user_email = get_user_id()
+    if not user_email:
+        return jsonify({'suggestions': []})
+
+    user = get_or_create_user(user_email)
+    
+    # Cache Check: If updated in last 24 hours, return cached
+    if user.last_ai_suggestions and user.suggestions_updated_at:
+        diff = datetime.utcnow() - user.suggestions_updated_at
+        if diff.days < 1:
+            try:
+                return jsonify({
+                    'suggestions': json.loads(user.last_ai_suggestions),
+                    'generated_at': user.suggestions_updated_at.isoformat(),
+                    'cached': True
+                })
+            except: pass
+
+    jobs = JobApplication.query.filter_by(user_id=user_email).all()
     suggestions = []
     
+    # 1. Rule-based suggestions (free, no API call)
     for job in jobs:
         days_since_applied = (datetime.utcnow() - job.applied_date).days
-        
         if job.status == 'Applied' and days_since_applied >= 7:
             suggestions.append({
                 'type': 'follow_up',
@@ -217,27 +262,112 @@ def get_ai_suggestions():
                 'message': f"Follow up on your {job.position} application at {job.company} - {days_since_applied} days since applied",
                 'job_id': job.id
             })
-        
-        if job.status == 'Interview':
+    
+    # 2. AI Suggestions (only if quota allows or cached is old)
+    try:
+        model = get_real_model()
+        job_list_str = "\n".join([f"- {j.position} at {j.company} (Status: {j.status})" for j in jobs[:10]])
+        prompt = f"I am a job seeker with these applications:\n{job_list_str}\n\nGive me 3 concise career coaching suggestions for this week. One sentence each."
+        response = model.generate_content(prompt)
+        advice_lines = [line.strip("- 0123456789. ").strip() for line in response.text.strip().split("\n") if line.strip()]
+        for line in advice_lines[:3]:
             suggestions.append({
-                'type': 'interview_prep',
-                'priority': 'high',
-                'message': f"Prepare for your {job.position} interview at {job.company}",
-                'job_id': job.id
+                'type': 'ai_insight',
+                'priority': 'medium',
+                'message': line,
+                'job_id': None
             })
-    
-    if len(jobs) > 0:
-        suggestions.append({
-            'type': 'motivation',
-            'priority': 'medium',
-            'message': f"Great progress! You've applied to {len(jobs)} positions. Keep going!",
-            'job_id': None
-        })
-    
+        
+        # Save to cache
+        user.last_ai_suggestions = json.dumps(suggestions)
+        user.suggestions_updated_at = datetime.utcnow()
+        db.session.commit()
+        
+    except Exception as e:
+        print(f"Gemini API Error for suggestions: {e}")
+        # If AI fails, use whatever we have in suggestions (rule-based)
+        if not suggestions:
+            suggestions.append({'type': 'motivation', 'priority': 'medium', 'message': "Keep applying! Consistency is key."})
+
     return jsonify({
         'suggestions': suggestions,
-        'generated_at': datetime.utcnow().isoformat()
+        'generated_at': datetime.utcnow().isoformat(),
+        'cached': False
     })
+
+@app.route("/api/ai/chat", methods=["POST"])
+def ai_chat():
+    if not os.environ.get("GEMINI_API_KEY"):
+        return jsonify({"error": "Gemini API key not configured"}), 500
+    user_id = get_user_id()
+    data = request.get_json()
+    user_message = data.get("message", "")
+    history = data.get("history", [])
+    if not user_message:
+        return jsonify({"error": "Message is required"}), 400
+    valid_history = [t for t in history if t.get("role") in ["user", "model"] and t.get("parts")]
+    try:
+        model = get_real_model()
+        chat = model.start_chat(history=valid_history)
+        jobs = JobApplication.query.filter_by(user_id=user_id).all()
+        context = "You are a career coach. User's tracked jobs: "
+        context += ", ".join([f"{j.position} at {j.company}" for j in jobs]) if jobs else "None yet."
+        response = chat.send_message(f"{context}\n\nUser: {user_message}")
+        return jsonify({"response": response.text, "generated_at": datetime.utcnow().isoformat()})
+    except Exception as e:
+        error_msg = str(e)
+        if "429" in error_msg:
+            return jsonify({"error": "Gemini API Quota Exceeded. Please wait for the daily reset or switch to a Pay-as-you-go plan (which has a larger free tier)."}), 429
+        return jsonify({"error": error_msg}), 500
+
+@app.route("/api/ai/match-resume", methods=["POST"])
+def match_resume():
+    data = request.get_json()
+    resume_text = data.get("resume_text", "")
+    job_description = data.get("job_description", "")
+    if not resume_text or not job_description:
+        return jsonify({"error": "Both resume and job description are required"}), 400
+    try:
+        model = get_real_model()
+        prompt = f"""You are an ATS expert. Analyze this resume against the job description.
+Return ONLY a valid JSON object, no extra text.
+
+Resume:
+{resume_text}
+
+Job Description:
+{job_description}
+
+Return exactly this JSON:
+{{
+  "match_score": <integer 0-100>,
+  "matched_keywords": ["keyword1", "keyword2"],
+  "missing_keywords": ["keyword1", "keyword2"],
+  "suggestions": ["suggestion1", "suggestion2", "suggestion3"],
+  "summary": "<2 sentence assessment>"
+}}"""
+        response = model.generate_content(prompt)
+        text = response.text.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        return jsonify(json.loads(text.strip()))
+    except Exception as e:
+        error_msg = str(e)
+        if "429" in error_msg:
+            return jsonify({"error": "Gemini API Quota Exceeded. ATS Scan is currently unavailable on the free tier."}), 429
+        return jsonify({"error": error_msg}), 500
+
+@app.route("/api/ai/diagnostics", methods=["GET"])
+def ai_diagnostics():
+    if not os.environ.get("GEMINI_API_KEY"):
+        return jsonify({"error": "No API Key found"}), 500
+    try:
+        models = [{"name": m.name, "methods": m.supported_generation_methods} for m in genai.list_models()]
+        return jsonify({"available_models": models})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/company/logo', methods=['GET'])
 def get_company_logo():

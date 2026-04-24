@@ -1,4 +1,9 @@
-@app.route('/api/jobs/parse', methods=['POST'])
+import requests
+from bs4 import BeautifulSoup
+import google.generativeai as genai
+import json
+from flask import request, jsonify
+
 def parse_job_url():
     data = request.get_json()
     url = data.get('url')
