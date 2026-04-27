@@ -1,8 +1,10 @@
 'use client';
 
-import { Brain, Briefcase, Calendar, Download, FileText, LogIn, LogOut, MessageSquare, Send, Sparkles, Target, TrendingUp } from 'lucide-react';
+import { Brain, Briefcase, Calendar, Download, FileText, LogIn, LogOut, MessageSquare, Send, Sparkles, Target, TrendingUp, Zap } from 'lucide-react';
 import { signIn, signOut, useSession } from 'next-auth/react';
 import { useEffect, useRef, useState } from 'react';
+import FileDropZone from '../components/FileDropZone';
+import ShareResultButton from '../components/ShareResultButton';
 import StatsChart from '../components/StatsChart';
 
 interface Job {
@@ -77,6 +79,7 @@ export default function PremiumJobTracker() {
   const [chatMessages, setChatMessages] = useState<{ role: string; content: string }[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [chatProvider, setChatProvider] = useState<string>('');
   const [resumeText, setResumeText] = useState('');
   const [jobDescription, setJobDescription] = useState('');
   const [matchResult, setMatchResult] = useState<any>(null);
@@ -206,6 +209,7 @@ export default function PremiumJobTracker() {
       const history = chatMessages.map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.content }] }));
       const res = await fetch(`${API_BASE_URL}/api/ai/chat`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ message: userMsg, history }) });
       const data = await res.json();
+      if (data.provider) setChatProvider(data.provider);
       setChatMessages(prev => [...prev, { role: data.response ? 'ai' : 'error', content: data.response || `Error: ${data.error}` }]);
     } catch {
       setChatMessages(prev => [...prev, { role: 'error', content: 'Connection failed.' }]);
@@ -456,7 +460,10 @@ export default function PremiumJobTracker() {
                 <div className="bg-[#000926] p-4 flex items-center gap-2 text-white">
                   <Brain size={18} className="text-[#0F52BA]" />
                   <span className="font-bold text-sm">AI Career Coach</span>
-                  <span className="ml-auto text-xs text-[#A6C5D7] bg-white/10 px-2 py-1 rounded">Gemini 1.5 Flash</span>
+                  <span className="ml-auto flex items-center gap-1.5 text-xs text-[#A6C5D7] bg-white/10 px-2 py-1 rounded">
+                    <Zap size={11} />
+                    {chatProvider ? chatProvider.charAt(0).toUpperCase() + chatProvider.slice(1) : 'Multi-Provider'}
+                  </span>
                 </div>
                 <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-gray-50/50">
                   {chatMessages.length === 0 ? (
@@ -492,12 +499,24 @@ export default function PremiumJobTracker() {
             {activeAiView === 'ats' && (
               <div className="space-y-5">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                  {[['📄 Your Resume', resumeText, setResumeText, 'Paste your resume text...'], ['💼 Job Description', jobDescription, setJobDescription, 'Paste the job description...']].map(([label, value, setter, placeholder]) => (
-                    <div key={label as string} className="bg-white/90 rounded-2xl p-5 shadow-xl border border-white/30">
-                      <label className="block text-sm font-semibold text-[#000926] mb-2">{label as string}</label>
-                      <textarea value={value as string} onChange={e => (setter as any)(e.target.value)} placeholder={placeholder as string} rows={12} className="w-full border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none text-black placeholder:text-gray-400 text-sm resize-none" />
-                    </div>
-                  ))}
+                  {/* Resume upload — supports drag & drop PDF/DOCX/TXT or paste */}
+                  <FileDropZone
+                    label="📄 Your Resume"
+                    value={resumeText}
+                    onChange={setResumeText}
+                    placeholder="Paste resume text, or drag & drop a PDF / DOCX / TXT file…"
+                    apiBase={API_BASE_URL}
+                    authHeaders={authHeaders}
+                  />
+                  {/* Job description upload — same component */}
+                  <FileDropZone
+                    label="💼 Job Description"
+                    value={jobDescription}
+                    onChange={setJobDescription}
+                    placeholder="Paste the job description, or drag & drop a file…"
+                    apiBase={API_BASE_URL}
+                    authHeaders={authHeaders}
+                  />
                 </div>
                 <button onClick={handleATSScan} disabled={isMatchLoading || !resumeText.trim() || !jobDescription.trim()} className="w-full bg-[#0F52BA] hover:bg-[#000926] disabled:opacity-50 text-white py-4 rounded-xl font-bold text-base shadow-lg transition-all flex items-center justify-center gap-3">
                   {isMatchLoading ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Scanning...</> : <><Target size={20} />Run ATS Scan</>}
@@ -506,13 +525,28 @@ export default function PremiumJobTracker() {
                   <div className="space-y-4">
                     <div className="bg-white/90 rounded-2xl p-6 shadow-xl border border-white/30">
                       <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-bold text-[#000926]">ATS Match Score</h3>
+                        <div>
+                          <h3 className="font-bold text-[#000926]">ATS Match Score</h3>
+                          {matchResult.provider && (
+                            <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                              <Zap size={10} /> Analysed by {matchResult.provider}
+                              {matchResult.cached && <span className="ml-1 text-green-500">(cached)</span>}
+                            </p>
+                          )}
+                        </div>
                         <span className={`text-4xl font-black ${matchResult.match_score >= 70 ? 'text-green-500' : matchResult.match_score >= 40 ? 'text-orange-500' : 'text-red-500'}`}>{matchResult.match_score}%</span>
                       </div>
                       <div className="w-full bg-gray-100 rounded-full h-4 mb-3">
-                        <div className={`h-4 rounded-full ${matchResult.match_score >= 70 ? 'bg-green-500' : matchResult.match_score >= 40 ? 'bg-orange-500' : 'bg-red-500'}`} style={{ width: `${matchResult.match_score}%` }} />
+                        <div className={`h-4 rounded-full transition-all duration-700 ${matchResult.match_score >= 70 ? 'bg-green-500' : matchResult.match_score >= 40 ? 'bg-orange-500' : 'bg-red-500'}`} style={{ width: `${matchResult.match_score}%` }} />
                       </div>
-                      {matchResult.summary && <p className="text-gray-600 text-sm">{matchResult.summary}</p>}
+                      {matchResult.summary && <p className="text-gray-600 text-sm mb-4">{matchResult.summary}</p>}
+                      {/* Share Results button */}
+                      <ShareResultButton
+                        data={matchResult}
+                        label={`ATS Match: ${matchResult.match_score}%`}
+                        apiBase={API_BASE_URL}
+                        authHeaders={authHeaders}
+                      />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="bg-white/90 rounded-2xl p-5 shadow-xl border border-white/30">
@@ -622,10 +656,22 @@ export default function PremiumJobTracker() {
         {/* Cover Letter Modal */}
         {showCoverLetter && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl p-8 max-w-2xl w-full max-h-[80vh] overflow-auto shadow-2xl">
+            <div className="bg-white rounded-2xl p-8 max-w-2xl w-full max-h-[80vh] overflow-auto shadow-2xl relative">
               <h2 className="text-xl font-bold text-[#000926] mb-4">Generated Cover Letter</h2>
-              <pre className="whitespace-pre-wrap text-gray-700 text-sm mb-6">{coverLetter}</pre>
-              <button onClick={() => setShowCoverLetter(false)} className="bg-[#0F52BA] text-white px-6 py-2.5 rounded-xl text-sm font-medium">Close</button>
+              <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 mb-6">
+                <pre className="whitespace-pre-wrap text-gray-700 text-sm font-sans">{coverLetter}</pre>
+              </div>
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                <button onClick={() => setShowCoverLetter(false)} className="w-full sm:w-auto bg-gray-100 text-gray-600 px-6 py-2.5 rounded-xl text-sm font-bold">Close</button>
+                <div className="w-full sm:w-auto">
+                  <ShareResultButton
+                    data={{ cover_letter: coverLetter }}
+                    label="Job Application Cover Letter"
+                    apiBase={API_BASE_URL}
+                    authHeaders={authHeaders}
+                  />
+                </div>
+              </div>
             </div>
           </div>
         )}
