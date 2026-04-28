@@ -14,6 +14,7 @@ class User(UserMixin, db.Model):
     name = db.Column(db.String(100))
     last_ai_suggestions = db.Column(db.Text)
     suggestions_updated_at = db.Column(db.DateTime)
+    gmail_credentials = db.Column(db.Text) # Stores JSON string of credentials
 
 
 class JobApplication(db.Model):

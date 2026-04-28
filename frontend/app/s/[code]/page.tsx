@@ -16,7 +16,9 @@ export default function SharedResultPage() {
 
   useEffect(() => {
     if (code) {
-      fetch(`${API_BASE_URL}/s/${code}`)
+      fetch(`${API_BASE_URL}/s/${code}`, {
+        headers: { 'Accept': 'application/json' },
+      })
         .then(res => res.json())
         .then(resData => {
           if (resData.error) throw new Error(resData.error);

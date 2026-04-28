@@ -88,11 +88,7 @@ export default function StatsChart({ data, height = "h-full" }: { data: any[], h
                         animationBegin={300}
                         animationDuration={2000}
                         animationEasing="ease-in-out"
-                    >
-                        {data.map((entry, index) => (
-                            <motion.rect key={`cell-${index}`} initial={{ height: 0 }} animate={{ height: 'auto' }} />
-                        ))}
-                    </Bar>
+                    />
                 </BarChart>
             </ResponsiveContainer>
         </motion.div>

@@ -1,8 +1,9 @@
 'use client';
 
-import { Brain, Briefcase, Calendar, Download, FileText, LogIn, LogOut, MessageSquare, Send, Sparkles, Target, TrendingUp, Zap } from 'lucide-react';
+import { AlertCircle, Brain, Briefcase, Calendar, Download, FileText, Info, LogIn, LogOut, MessageSquare, Send, Sparkles, Target, TrendingUp, X, Zap } from 'lucide-react';
 import { signIn, signOut, useSession } from 'next-auth/react';
 import { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import FileDropZone from '../components/FileDropZone';
 import ShareResultButton from '../components/ShareResultButton';
 import StatsChart from '../components/StatsChart';
@@ -62,6 +63,11 @@ const statusBarColors: Record<string, string> = {
 export default function PremiumJobTracker() {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
   const { data: session } = useSession();
+  const [impersonatedEmail, setImpersonatedEmail] = useState<string | null>(null);
+  
+  // Use impersonated email if set, otherwise real session email
+  const activeEmail = impersonatedEmail || session?.user?.email || '';
+
   const [jobs, setJobs] = useState<Job[]>([]);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showForm, setShowForm] = useState(false);
@@ -84,6 +90,9 @@ export default function PremiumJobTracker() {
   const [jobDescription, setJobDescription] = useState('');
   const [matchResult, setMatchResult] = useState<any>(null);
   const [isMatchLoading, setIsMatchLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<{added: number} | null>(null);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
   const [activeAiView, setActiveAiView] = useState<'chat' | 'ats'>('chat');
   const dragJobRef = useRef<Job | null>(null);
 
@@ -95,12 +104,12 @@ export default function PremiumJobTracker() {
 
   const authHeaders = () => ({
     'Content-Type': 'application/json',
-    'X-User-Email': session?.user?.email || '',
+    'X-User-Email': activeEmail,
   });
 
   useEffect(() => {
-    if (session) { fetchJobs(); fetchStats(); fetchSuggestions(); fetchTrends(); }
-  }, [session]);
+    if (activeEmail) { fetchJobs(); fetchStats(); fetchSuggestions(); fetchTrends(); }
+  }, [activeEmail]);
 
   const fetchJobs = async () => {
     try {
@@ -188,15 +197,22 @@ export default function PremiumJobTracker() {
     try {
       const res = await fetch(`${API_BASE_URL}/api/ai/cover-letter`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ company, position }) });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to generate cover letter');
       setCoverLetter(data.cover_letter); setShowCoverLetter(true);
-    } catch { }
+    } catch (err: any) {
+      setNotification({ message: `AI Error: ${err.message}`, type: 'error' });
+    }
   };
 
   const generateInterviewQuestions = async (position: string) => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/ai/interview-questions`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ position }) });
-      setInterviewQuestions(await res.json()); setShowInterviewQuestions(true);
-    } catch { }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to generate questions');
+      setInterviewQuestions(data); setShowInterviewQuestions(true);
+    } catch (err: any) {
+      setNotification({ message: `AI Error: ${err.message}`, type: 'error' });
+    }
   };
 
   const handleChatSend = async () => {
@@ -220,10 +236,74 @@ export default function PremiumJobTracker() {
     if (!resumeText.trim() || !jobDescription.trim()) return;
     setIsMatchLoading(true); setMatchResult(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/ai/match-resume`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ resume_text: resumeText, job_description: jobDescription }) });
-      setMatchResult(await res.json());
-    } catch { }
+      const res = await fetch(`${API_BASE_URL}/api/ai/match-resume`, { 
+        method: 'POST', 
+        headers: authHeaders(), 
+        body: JSON.stringify({ resume_text: resumeText, job_description: jobDescription }) 
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ATS Scan failed');
+      setMatchResult(data);
+    } catch (err: any) {
+      setMatchResult({ error: err.message });
+    }
     finally { setIsMatchLoading(false); }
+  };
+
+  const handleGmailSync = async () => {
+    setIsSyncing(true); 
+    setSyncStatus(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/gmail/sync`, { method: 'POST', headers: authHeaders() });
+      const data = await res.json();
+      
+      if (data.error === 'needs_auth') {
+        const startRes = await fetch(`${API_BASE_URL}/api/gmail/auth-start`, { method: 'POST', headers: authHeaders() });
+        const startData = await startRes.json();
+        
+        if (startData.auth_url) {
+          setNotification({ message: "Check your browser! Please grant access in the new Google tab to continue.", type: 'info' });
+          window.open(startData.auth_url, '_blank');
+          
+          // Step 2: Poll for completion
+          const pollInterval = setInterval(async () => {
+            try {
+              const statusRes = await fetch(`${API_BASE_URL}/api/gmail/auth-status`, { headers: authHeaders() });
+              const statusData = await statusRes.json();
+              
+              if (statusData.status === 'done') {
+                clearInterval(pollInterval);
+                setNotification({ message: "Authorization successful! Syncing your emails...", type: 'success' });
+                handleGmailSync(); 
+              } else if (statusData.status === 'error') {
+                clearInterval(pollInterval);
+                setIsSyncing(false);
+                setNotification({ message: `Authorization Failed: ${statusData.message}`, type: 'error' });
+              }
+            } catch (pollErr) {
+              console.error("Polling error:", pollErr);
+            }
+          }, 3000);
+          
+          return;
+        }
+        throw new Error(startData.error || 'Could not start authorization');
+      }
+
+      if (!res.ok) throw new Error(data.error || 'Sync failed');
+      setSyncStatus({ added: data.added });
+      if (data.added > 0) {
+        fetchJobs(); 
+        setNotification({ message: `Successfully synced! Found ${data.added} new applications from your Gmail.`, type: 'success' });
+      } else {
+        setNotification({ message: "Sync completed! No new job applications were found in your Gmail snippets.", type: 'info' });
+      }
+    } catch (err: any) {
+      setNotification({ message: `Gmail Sync Error: ${err.message}`, type: 'error' });
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => setNotification(null), 6000);
+    }
   };
 
   const filteredJobs = jobs.filter(job => filter === 'All' || job.status === filter);
@@ -249,19 +329,31 @@ export default function PremiumJobTracker() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#D6E6F3] via-[#A6C5D7] to-[#0F52BA]">
+    <div className="min-h-screen bg-linear-to-br from-[#D6E6F3] via-[#A6C5D7] to-[#0F52BA]">
       {/* Header */}
       <div className="bg-[#000926] text-white shadow-2xl">
         <div className="max-w-7xl mx-auto px-6 py-5">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
-              <div className="bg-gradient-to-r from-[#0F52BA] to-[#A6C5D7] p-2.5 rounded-xl"><Briefcase size={24} /></div>
+              <div className="bg-linear-to-r from-[#0F52BA] to-[#A6C5D7] p-2.5 rounded-xl"><Briefcase size={24} /></div>
               <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-white to-[#A6C5D7] bg-clip-text text-transparent">JobPilot</h1>
+                <h1 className="text-2xl font-bold bg-linear-to-r from-white to-[#A6C5D7] bg-clip-text text-transparent">JobPilot</h1>
                 <p className="text-[#A6C5D7] text-xs">AI-Powered Job Application Management</p>
               </div>
             </div>
             <div className="flex gap-3 items-center">
+              {/* Developer User Switcher */}
+              <select 
+                onChange={(e) => setImpersonatedEmail(e.target.value || null)}
+                className="bg-white/10 border border-white/20 text-white text-xs rounded-lg px-2 py-1 outline-none hover:bg-white/20 transition-all cursor-pointer"
+                title="Testing: Impersonate a dummy user"
+              >
+                <option value="" className="text-gray-900">Real Session</option>
+                <option value="alex.river@example.com" className="text-gray-900">Alex River (Test)</option>
+                <option value="sam.smith@tech.io" className="text-gray-900">Sam Smith (Test)</option>
+                <option value="jlee@dev.com" className="text-gray-900">Jordan Lee (Test)</option>
+              </select>
+
               {session ? (
                 <>
                   <div className="hidden md:block text-right mr-1">
@@ -282,7 +374,7 @@ export default function PremiumJobTracker() {
           </div>
           <div className="flex gap-1 mt-5 border-b border-white/10 overflow-x-auto no-scrollbar whitespace-nowrap">
             {['dashboard', 'applications', 'ai-tools', 'analytics'].map(tab => (
-              <button key={tab} onClick={() => setActiveTab(tab)} className={`px-5 py-3 font-medium text-sm transition-all capitalize flex-shrink-0 ${activeTab === tab ? 'text-white border-b-2 border-[#0F52BA] bg-white/5' : 'text-[#A6C5D7] hover:text-white hover:bg-white/5'}`}>
+              <button key={tab} onClick={() => setActiveTab(tab)} className={`px-5 py-3 font-medium text-sm transition-all capitalize shrink-0 ${activeTab === tab ? 'text-white border-b-2 border-[#0F52BA] bg-white/5' : 'text-[#A6C5D7] hover:text-white hover:bg-white/5'}`}>
                 {tab.replace('-', ' ')}
               </button>
             ))}
@@ -290,11 +382,49 @@ export default function PremiumJobTracker() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      {/* Notification Banner */}
+      <AnimatePresence>
+        {notification && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-24 left-1/2 -translate-x-1/2 z-50 w-full max-w-lg px-4"
+          >
+            <div className={`rounded-xl p-4 shadow-2xl flex items-center gap-3 border ${
+              notification.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
+              notification.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
+              'bg-blue-50 border-blue-200 text-blue-800'
+            }`}>
+              {notification.type === 'success' && <Sparkles size={20} />}
+              {notification.type === 'error' && <AlertCircle size={20} />}
+              {notification.type === 'info' && <Info size={20} />}
+              <p className="text-sm font-medium">{notification.message}</p>
+              <button onClick={() => setNotification(null)} className="ml-auto opacity-50 hover:opacity-100"><X size={16} /></button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="max-w-7xl mx-auto px-6 py-10">
 
         {/* ── DASHBOARD ── */}
         {activeTab === 'dashboard' && (
           <div>
+            {/* Gmail Sync Notification */}
+            {syncStatus && (
+              <div className="mb-6 p-4 bg-white/90 backdrop-blur-xl border border-green-200 rounded-2xl flex items-center justify-between shadow-lg">
+                <div className="flex items-center gap-3">
+                  <div className="bg-green-100 p-2 rounded-xl text-green-600">
+                    <Zap size={20} />
+                  </div>
+                  <p className="text-gray-800 font-medium text-sm">
+                    {syncStatus.added > 0 ? `Success! We added ${syncStatus.added} new applications from your Gmail.` : "Synced! Your dashboard is up to date."}
+                  </p>
+                </div>
+                <button onClick={() => setSyncStatus(null)} className="text-[#0F52BA] hover:text-[#000926] font-bold text-sm">Dismiss</button>
+              </div>
+            )}
             {aiSuggestions.length > 0 && (
               <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl p-4 shadow-xl border border-white/20">
                 <div className="flex items-center gap-2 mb-3"><Sparkles className="text-[#0F52BA]" size={18} /><h3 className="font-semibold text-[#000926] text-sm">AI Insights</h3></div>
@@ -320,7 +450,7 @@ export default function PremiumJobTracker() {
                       { label: 'Response Rate', value: `${stats.response_rate}%`, icon: Sparkles, color: 'from-orange-500 to-orange-300' },
                     ].map((s, i) => (
                       <div key={i} className="bg-white/90 rounded-2xl p-5 shadow-xl border border-white/20 hover:scale-105 transition-transform flex flex-col">
-                        <div className={`inline-flex p-2.5 rounded-xl bg-gradient-to-r ${s.color} mb-3 w-fit`}><s.icon className="text-white" size={20} /></div>
+                        <div className={`inline-flex p-2.5 rounded-xl bg-linear-to-r ${s.color} mb-3 w-fit`}><s.icon className="text-white" size={20} /></div>
                         <div className="text-3xl font-bold text-[#000926]">{s.value}</div>
                         <div className="text-xs text-gray-500 mt-1">{s.label}</div>
                       </div>
@@ -347,6 +477,10 @@ export default function PremiumJobTracker() {
             <div className="flex gap-3 mb-6 flex-wrap items-center">
               <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 bg-[#0F52BA] hover:bg-[#0F52BA]/90 text-white px-5 py-2.5 rounded-xl font-medium shadow-lg transition-all text-sm">
                 <span className="text-lg">+</span> {showForm ? 'Cancel' : 'Add Application'}
+              </button>
+              <button onClick={handleGmailSync} disabled={isSyncing} className="flex items-center gap-2 bg-white text-[#0F52BA] hover:bg-gray-50 px-5 py-2.5 rounded-xl font-medium shadow transition-all text-sm border border-[#0F52BA]/20 disabled:opacity-50">
+                {isSyncing ? <div className="w-4 h-4 border-2 border-[#0F52BA]/30 border-t-[#0F52BA] rounded-full animate-spin" /> : <Zap size={16} />}
+                {isSyncing ? 'Syncing...' : 'Sync Gmail'}
               </button>
               <select value={filter} onChange={e => setFilter(e.target.value)} className="bg-white/90 border-2 border-[#0F52BA]/20 rounded-xl px-4 py-2.5 font-medium text-[#000926] text-sm shadow">
                 <option>All</option>{STATUSES.map(s => <option key={s}>{s}</option>)}
@@ -589,7 +723,7 @@ export default function PremiumJobTracker() {
                     { label: 'Offer Rate', value: `${trends.metrics.offer_rate}%`, icon: TrendingUp, color: 'from-green-500 to-green-300' },
                   ].map((s, i) => (
                     <div key={i} className="bg-white/90 rounded-2xl p-5 shadow-xl border border-white/20 flex items-center gap-4">
-                      <div className={`p-3 rounded-xl bg-gradient-to-r ${s.color}`}><s.icon className="text-white" size={24} /></div>
+                      <div className={`p-3 rounded-xl bg-linear-to-r ${s.color}`}><s.icon className="text-white" size={24} /></div>
                       <div><div className="text-3xl font-bold text-[#000926]">{s.value}</div><div className="text-sm text-gray-500">{s.label}</div></div>
                     </div>
                   ))}
@@ -680,9 +814,38 @@ export default function PremiumJobTracker() {
         {showInterviewQuestions && interviewQuestions && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-8 max-w-2xl w-full max-h-[80vh] overflow-auto shadow-2xl">
-              <h2 className="text-xl font-bold text-[#000926] mb-4">Interview Preparation</h2>
-              <div className="text-gray-700 text-sm whitespace-pre-wrap">{interviewQuestions.questions_text}</div>
-              <button onClick={() => setShowInterviewQuestions(false)} className="bg-[#0F52BA] text-white px-6 py-2.5 rounded-xl text-sm font-medium mt-6">Close</button>
+              <h2 className="text-xl font-bold text-[#000926] mb-2">Interview Preparation</h2>
+              <p className="text-sm text-gray-400 mb-5">Role: <span className="font-medium text-[#0F52BA]">{interviewQuestions.position}</span></p>
+              {interviewQuestions.questions?.technical && (
+                <div className="mb-5">
+                  <h3 className="text-sm font-bold text-[#0F52BA] mb-3 flex items-center gap-2">⚙️ Technical Questions</h3>
+                  <div className="space-y-2">
+                    {interviewQuestions.questions.technical.map((q: string, i: number) => (
+                      <div key={i} className="flex gap-3 p-3 bg-blue-50 rounded-xl">
+                        <span className="text-[#0F52BA] font-bold text-sm shrink-0">{i + 1}.</span>
+                        <p className="text-gray-700 text-sm">{q}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {interviewQuestions.questions?.behavioral && (
+                <div className="mb-5">
+                  <h3 className="text-sm font-bold text-purple-600 mb-3 flex items-center gap-2">🧠 Behavioral Questions</h3>
+                  <div className="space-y-2">
+                    {interviewQuestions.questions.behavioral.map((q: string, i: number) => (
+                      <div key={i} className="flex gap-3 p-3 bg-purple-50 rounded-xl">
+                        <span className="text-purple-600 font-bold text-sm shrink-0">{i + 1}.</span>
+                        <p className="text-gray-700 text-sm">{q}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {!interviewQuestions.questions?.technical && !interviewQuestions.questions?.behavioral && (
+                <p className="text-gray-500 text-sm">No questions available.</p>
+              )}
+              <button onClick={() => setShowInterviewQuestions(false)} className="bg-[#0F52BA] text-white px-6 py-2.5 rounded-xl text-sm font-medium mt-2">Close</button>
             </div>
           </div>
         )}

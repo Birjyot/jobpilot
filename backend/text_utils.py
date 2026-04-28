@@ -113,3 +113,18 @@ def build_suggestions_prompt(jobs_str: str) -> str:
         f"Give me 3 concise, actionable career tips for this week. "
         f"One sentence each. No numbering or bullets."
     )
+def build_gmail_extract_prompt(email_content: str) -> str:
+    """Prompt to extract job application info from a Gmail snippet."""
+    return f"""
+    Extract job application details from the following email snippet.
+    Return ONLY a JSON object with:
+    {{
+        "company": "Company name",
+        "role": "Job title/position",
+        "status": "Applied" | "Screening" | "Interview" | "Offer" | "Rejected",
+        "date": "YYYY-MM-DD" (best guess if not clear)
+    }}
+
+    Email Snippet:
+    \"\"\"{email_content}\"\"\"
+    """

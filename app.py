@@ -13,6 +13,8 @@ load_dotenv()
 # ── Backend modules ─────────────────────────────────────────────────────────
 from backend.parsing_utils import parse_job_url
 from backend.ai_router import ai_router, TaskType
+from backend.gmail_utils import sync_job_emails, get_gmail_service
+import threading
 from backend.cache_utils import make_cache_key, get_cached, set_cache, cache_stats
 from backend.text_utils import (
     build_ats_prompt, build_cover_letter_prompt,
@@ -23,7 +25,8 @@ from backend.file_parser import parse_uploaded_file
 
 # ── App setup ────────────────────────────────────────────────────────────────
 app = Flask(__name__)
-CORS(app)
+# Explicitly allow all origins and the custom X-User-Email header
+CORS(app, resources={r"/api/*": {"origins": "*"}}, allow_headers=["Content-Type", "X-User-Email"])
 
 app.add_url_rule('/api/jobs/parse', view_func=parse_job_url, methods=['POST'])
 
@@ -62,6 +65,18 @@ def get_or_create_user(email):
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({'message': 'JobPilot API', 'version': '3.0', 'status': 'running'})
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    # Pass through HTTP errors
+    if hasattr(e, 'code'):
+        return jsonify({"error": str(e)}), e.code
+    # Handle non-HTTP exceptions only
+    import traceback
+    print("--- BACKEND CRASH ---")
+    traceback.print_exc()
+    print("---------------------")
+    return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -169,11 +184,10 @@ def get_application_trends():
         if job.applied_date:
             mk = job.applied_date.strftime('%Y-%m')
             monthly_data[mk] = monthly_data.get(mk, 0) + 1
-        status = (job.status or "Applied").strip().capitalize()
-        if status in status_trends:
-            status_trends[status] += 1
-        else:
-            status_trends[status] = status_trends.get(status, 0) + 1
+        status = (job.status or "Applied").strip()
+        # Normalize capitalization to match our canonical statuses
+        matched = next((s for s in statuses if s.lower() == status.lower()), status)
+        status_trends[matched] = status_trends.get(matched, 0) + 1
         platform = job.platform or "Other"
         platform_data[platform] = platform_data.get(platform, 0) + 1
     total = len(jobs)
@@ -293,8 +307,10 @@ def get_ai_suggestions():
 
     # Rule-based follow-up suggestions (free, no AI)
     for job in jobs:
+        if job.applied_date is None:
+            continue
         days = (datetime.utcnow() - job.applied_date).days
-        if job.status == 'Applied' and days >= 7:
+        if job.status in ['Applied', 'Screening'] and days >= 7:
             suggestions.append({
                 'type':     'follow_up',
                 'priority': 'high',
@@ -525,27 +541,89 @@ def resolve_short_link(code):
     if link.is_expired():
         return jsonify({'error': 'This link has expired'}), 410
 
-    # Increment click counter
-    link.click_count += 1
-    db.session.commit()
+    # # Gmail Auth State
+_gmail_auth_state = {}
 
-    # If the request is from a browser (not expecting JSON), redirect to frontend
-    if 'application/json' not in request.headers.get('Accept', ''):
-        frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000").rstrip('/')
-        return redirect(f"{frontend_url}/s/{code}")
+@app.route("/api/gmail/auth-start", methods=["POST"])
+def gmail_auth_start():
+    user_email = get_user_id()
+    if not user_email:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    # In Production, this would be your Render URL
+    # In Local, it's localhost:5000
+    redirect_uri = "http://localhost:5000/api/gmail/callback"
+    if "onrender.com" in request.host_url:
+        redirect_uri = "https://jobpilot-30wb.onrender.com/api/gmail/callback"
+
+    from google_auth_oauthlib.flow import Flow
+    import json
+    
+    # Priority 1: Environment Variable (for Render/Production)
+    # Priority 2: Local File (for Local Dev)
+    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+    if creds_json:
+        creds_info = json.loads(creds_json)
+        flow = Flow.from_client_config(creds_info, scopes=['https://www.googleapis.com/auth/gmail.readonly'], redirect_uri=redirect_uri)
+    else:
+        flow = Flow.from_client_secrets_file('credentials.json', scopes=['https://www.googleapis.com/auth/gmail.readonly'], redirect_uri=redirect_uri)
+
+    auth_url, state = flow.authorization_url(prompt='consent', access_type='offline')
+    
+    # Store state to verify callback
+    _gmail_auth_state[user_email] = {"state": state, "status": "pending"}
+    
+    return jsonify({"auth_url": auth_url, "status": "pending"})
+
+@app.route("/api/gmail/callback")
+def gmail_callback():
+    state = request.args.get('state')
+    code = request.args.get('code')
+    
+    # Find the user by state
+    user_email = next((u for u, s in _gmail_auth_state.items() if s["state"] == state), None)
+    
+    if not user_email:
+        return "Error: Invalid state or session expired. Please try again.", 400
 
     try:
-        data = json.loads(link.target_data)
-    except Exception:
-        data = {}
+        redirect_uri = "http://localhost:5000/api/gmail/callback"
+        if "onrender.com" in request.host_url:
+            redirect_uri = "https://jobpilot-30wb.onrender.com/api/gmail/callback"
 
-    return jsonify({
-        'data':        data,
-        'label':       link.label,
-        'click_count': link.click_count,
-        'created_at':  link.created_at.isoformat(),
-    })
+        from google_auth_oauthlib.flow import Flow
+        creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+        if creds_json:
+            creds_info = json.loads(creds_json)
+            flow = Flow.from_client_config(creds_info, scopes=['https://www.googleapis.com/auth/gmail.readonly'], redirect_uri=redirect_uri)
+        else:
+            flow = Flow.from_client_secrets_file('credentials.json', scopes=['https://www.googleapis.com/auth/gmail.readonly'], redirect_uri=redirect_uri)
+            
+        flow.fetch_token(code=code)
+        creds = flow.credentials
 
+        user = get_or_create_user(user_email)
+        user.gmail_credentials = json.dumps({
+            'token': creds.token,
+            'refresh_token': creds.refresh_token,
+            'token_uri': creds.token_uri,
+            'client_id': creds.client_id,
+            'client_secret': creds.client_secret,
+            'scopes': creds.scopes
+        })
+        db.session.commit()
+        
+        _gmail_auth_state[user_email]["status"] = "done"
+        return "<h1>Authentication Successful!</h1><p>You can close this window now.</p><script>window.close();</script>"
+    except Exception as e:
+        _gmail_auth_state[user_email]["status"] = "error"
+        return f"Error: {str(e)}", 500
+
+@app.route("/api/gmail/auth-status", methods=["GET"])
+def gmail_auth_status():
+    user_email = get_user_id()
+    state_data = _gmail_auth_state.get(user_email, {"status": "none"})
+    return jsonify(state_data)
 
 @app.route('/api/links/<code>/stats', methods=['GET'])
 def link_stats(code):
@@ -554,6 +632,61 @@ def link_stats(code):
     if not link:
         return jsonify({'error': 'Link not found'}), 404
     return jsonify(link.to_dict())
+
+
+@app.route('/api/gmail/sync', methods=['POST'])
+def gmail_sync():
+    user_email = get_user_id()
+    if not user_email:
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    user = User.query.filter_by(email=user_email).first()
+    if not user or not user.gmail_credentials:
+        return jsonify({'error': 'needs_auth'}), 200
+    
+    print(f"[GmailSync] Starting extraction for {user_email}...")
+    try:
+        service = get_gmail_service(user.gmail_credentials)
+        new_jobs_data = sync_job_emails(service)
+        added_count = 0
+        
+        print(f"[GmailSync] Extracted {len(new_jobs_data)} candidates. Checking for duplicates...")
+        for job_data in new_jobs_data:
+            existing = JobApplication.query.filter_by(
+                user_id=user_email,
+                company=job_data.get('company'),
+                position=job_data.get('role')
+            ).first()
+            
+            if not existing:
+                new_app = JobApplication(
+                    user_id=user_email,
+                    company=job_data.get('company'),
+                    position=job_data.get('role'),
+                    status=job_data.get('status', 'Applied'),
+                    platform=job_data.get('source', 'Gmail'),
+                    applied_date=datetime.strptime(job_data.get('date'), '%Y-%m-%d') if job_data.get('date') else datetime.utcnow()
+                )
+                db.session.add(new_app)
+                added_count += 1
+            else:
+                # Update status if it's different (e.g. from Applied -> Interview)
+                new_status = job_data.get('status', 'Applied')
+                if existing.status != new_status:
+                    print(f"[GmailSync] Updating {existing.company} status: {existing.status} -> {new_status}")
+                    existing.status = new_status
+                    added_count += 1 # Count updates as "synced" items
+        
+        db.session.commit()
+        print(f"[GmailSync] Success! Synced {added_count} items (added or updated).")
+        return jsonify({'success': True, 'added': added_count})
+        
+    except Exception as e:
+        if "invalid_grant" in str(e) or "refresh_token" in str(e):
+             user.gmail_credentials = None
+             db.session.commit()
+             return jsonify({'error': 'needs_auth'}), 200
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':

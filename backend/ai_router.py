@@ -27,6 +27,7 @@ class TaskType(str, Enum):
     INTERVIEW_PREP  = "interview_prep"  # fast    — Groq primary
     CHAT            = "chat"            # fast    — Groq primary
     JOB_PARSE       = "job_parse"       # fast    — Gemini primary (existing feature)
+    GMAIL_EXTRACT   = "gmail_extract"   # fast    — Gemini primary (new feature)
 
 
 # ─────────────────────── Provider configs ─────────────────────────────
@@ -37,24 +38,26 @@ PROVIDER_CHAIN: dict[TaskType, list[tuple[str, str]]] = {
     TaskType.ATS_SCAN:       [("gemini", "gemini-1.5-pro"),
                                ("openrouter", "google/gemini-flash-1.5"),
                                ("groq",   "llama-3.1-8b-instant")],
-    TaskType.RESUME_PARSE:   [("gemini", "gemini-1.5-flash"),
+    TaskType.RESUME_PARSE:   [("gemini", "gemini-1.5-flash-latest"),
                                ("openrouter", "google/gemini-flash-1.5"),
                                ("groq",   "llama-3.1-8b-instant")],
-    TaskType.COVER_LETTER:   [("gemini", "gemini-1.5-flash"),
+    TaskType.COVER_LETTER:   [("gemini", "gemini-1.5-flash-latest"),
                                ("openrouter", "google/gemini-flash-1.5"),
                                ("groq",   "llama-3.1-8b-instant")],
-    TaskType.SUGGESTIONS:    [("gemini", "gemini-1.5-flash"),
+    TaskType.SUGGESTIONS:    [("gemini", "gemini-1.5-flash-latest"),
                                ("groq",   "llama-3.1-8b-instant"),
                                ("openrouter", "google/gemini-flash-1.5")],
     TaskType.INTERVIEW_PREP: [("groq",   "llama-3.1-8b-instant"),
-                               ("gemini", "gemini-1.5-flash"),
+                               ("gemini", "gemini-1.5-flash-latest"),
                                ("openrouter", "google/gemini-flash-1.5")],
     TaskType.CHAT:           [("groq",   "llama-3.1-8b-instant"),
-                               ("gemini", "gemini-1.5-flash"),
+                               ("gemini", "gemini-1.5-flash-latest"),
                                ("openrouter", "google/gemini-flash-1.5")],
-    TaskType.JOB_PARSE:      [("gemini", "gemini-1.5-flash"),
+    TaskType.JOB_PARSE:      [("gemini", "gemini-1.5-flash-latest"),
                                ("groq",   "llama-3.1-8b-instant"),
                                ("openrouter", "google/gemini-flash-1.5")],
+    TaskType.GMAIL_EXTRACT:  [("gemini", "gemini-1.5-flash-latest"),
+                               ("groq",   "llama-3.1-8b-instant")],
 }
 
 # Retry settings
@@ -162,15 +165,18 @@ class AIRouter:
         errors = []
 
         for provider, model_id in chain:
+            print(f"[AIRouter] Attempting {task_type} with {provider}/{model_id}...")
             for attempt in range(1, MAX_RETRIES + 1):
                 try:
+                    start_time = time.time()
                     text = self._dispatch(provider, model_id, prompt)
+                    duration = time.time() - start_time
 
                     # Optional: strip markdown fences from JSON responses
                     if json_mode:
                         text = _clean_json_text(text)
 
-                    print(f"[AIRouter] ✓ {provider}/{model_id} (attempt {attempt})")
+                    print(f"[AIRouter] OK {provider}/{model_id} success in {duration:.2f}s (attempt {attempt})")
                     return {
                         "text":     text,
                         "provider": provider,
@@ -182,7 +188,7 @@ class AIRouter:
                 except Exception as e:
                     err = str(e)
                     errors.append(f"{provider}/{model_id} attempt {attempt}: {err}")
-                    print(f"[AIRouter] ✗ {provider}/{model_id} attempt {attempt}: {err}")
+                    print(f"[AIRouter] FAIL {provider}/{model_id} attempt {attempt}: {err}")
 
                     # Don't retry 401/403 (auth errors) — skip to next provider
                     if any(code in err for code in ["401", "403", "invalid_api_key"]):
