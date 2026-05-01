@@ -1,5 +1,5 @@
 """
-ai_router.py — Multi-provider AI abstraction layer for JobPilot
+ai_router.py — Multi-provider AI abstraction layer for CareerOS
 
 Provider hierarchy:
   - Gemini 1.5  → deep/complex tasks (ATS scan, resume analysis, cover letter)
@@ -105,7 +105,7 @@ def _call_openrouter(model_id: str, prompt: str) -> str:
         "Authorization": f"Bearer {api_key}",
         "Content-Type":  "application/json",
         "HTTP-Referer":  "https://jobpilot.app",
-        "X-Title":       "JobPilot",
+        "X-Title":       "CareerOS",
     }
     payload = {
         "model": model_id,

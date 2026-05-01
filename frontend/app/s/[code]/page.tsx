@@ -47,7 +47,7 @@ export default function SharedResultPage() {
           <h1 className="text-2xl font-bold text-[#000926] mb-2">Link Expired or Invalid</h1>
           <p className="text-gray-500 mb-6">{error}</p>
           <Link href="/" className="inline-flex items-center gap-2 text-[#0F52BA] font-semibold hover:underline">
-            <ArrowLeft size={16} /> Go to JobPilot
+            <ArrowLeft size={16} /> Go to CareerOS
           </Link>
         </div>
       </div>
@@ -65,7 +65,7 @@ export default function SharedResultPage() {
             <div className="bg-[#000926] p-2 rounded-xl text-white shadow-lg">
               <Briefcase size={20} />
             </div>
-            <h1 className="text-2xl font-bold text-[#000926]">JobPilot <span className="text-[#0F52BA]">Shared</span></h1>
+            <h1 className="text-2xl font-bold text-[#000926]">CareerOS <span className="text-[#0F52BA]">Shared</span></h1>
           </div>
           <div className="text-xs text-gray-600 bg-white/50 px-3 py-1.5 rounded-full font-medium">
             Views: {data.click_count}
@@ -157,7 +157,7 @@ export default function SharedResultPage() {
         <div className="mt-12 text-center">
           <p className="text-[#000926]/60 text-sm mb-6 font-medium">Want to scan your own resume?</p>
           <Link href="/" className="bg-[#000926] text-white px-8 py-4 rounded-2xl font-bold shadow-xl hover:shadow-2xl hover:scale-105 transition-all inline-flex items-center gap-3 group">
-            Try JobPilot AI Free <ArrowLeft size={18} className="rotate-180 group-hover:translate-x-1 transition-transform" />
+            Try CareerOS AI Free <ArrowLeft size={18} className="rotate-180 group-hover:translate-x-1 transition-transform" />
           </Link>
         </div>
       </div>

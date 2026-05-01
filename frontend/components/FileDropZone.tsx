@@ -15,21 +15,31 @@ interface FileDropZoneProps {
 type UploadState = 'idle' | 'dragging' | 'uploading' | 'done' | 'error';
 
 export default function FileDropZone({
-  label, value, onChange, placeholder = 'Paste text or drop a file here...', apiBase, authHeaders
+  label,
+  value,
+  onChange,
+  placeholder = 'Paste text or drop a file here...',
+  apiBase,
+  authHeaders
 }: FileDropZoneProps) {
-  const [uploadState, setUploadState] = useState<UploadState>('idle');
-  const [fileName, setFileName]       = useState('');
-  const [errorMsg, setErrorMsg]       = useState('');
-  const [wordCount, setWordCount]     = useState(0);
-  const fileInputRef                  = useRef<HTMLInputElement>(null);
 
-  const ALLOWED = ['application/pdf',
+  const [uploadState, setUploadState] = useState<UploadState>('idle');
+  const [fileName, setFileName] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [wordCount, setWordCount] = useState(0);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const ALLOWED = [
+    'application/pdf',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'text/plain'];
+    'text/plain'
+  ];
   const ALLOWED_EXT = ['.pdf', '.docx', '.txt'];
 
   const validateFile = (file: File): string | null => {
-    if (!ALLOWED.includes(file.type) && !ALLOWED_EXT.some(e => file.name.toLowerCase().endsWith(e))) {
+    if (!ALLOWED.includes(file.type) &&
+        !ALLOWED_EXT.some(e => file.name.toLowerCase().endsWith(e))) {
       return 'Only PDF, DOCX, or TXT files are supported.';
     }
     if (file.size > 5 * 1024 * 1024) return 'File must be under 5 MB.';
@@ -38,7 +48,11 @@ export default function FileDropZone({
 
   const uploadFile = useCallback(async (file: File) => {
     const err = validateFile(file);
-    if (err) { setErrorMsg(err); setUploadState('error'); return; }
+    if (err) {
+      setErrorMsg(err);
+      setUploadState('error');
+      return;
+    }
 
     setUploadState('uploading');
     setFileName(file.name);
@@ -53,11 +67,14 @@ export default function FileDropZone({
         headers: { 'X-User-Email': authHeaders()['X-User-Email'] || '' },
         body: form,
       });
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Upload failed');
+
       onChange(data.text);
       setWordCount(data.word_count);
       setUploadState('done');
+
     } catch (e: any) {
       setErrorMsg(e.message || 'Upload failed');
       setUploadState('error');
@@ -89,10 +106,20 @@ export default function FileDropZone({
   const isUploading = uploadState === 'uploading';
 
   return (
-    <div className="bg-white/90 rounded-2xl p-5 shadow-xl border border-white/30 flex flex-col gap-3">
-      <label className="block text-sm font-semibold text-[#000926]">{label}</label>
+    <div
+      className="rounded-2xl p-5 flex flex-col gap-3"
+      style={{
+        background: 'rgba(255,255,255,0.05)',
+        backdropFilter: 'blur(40px)',
+        border: '1px solid rgba(255,255,255,0.08)'
+      }}
+    >
+      {/* LABEL */}
+      <label className="text-sm font-semibold text-white/80">
+        {label}
+      </label>
 
-      {/* Drop zone */}
+      {/* DROP ZONE */}
       <div
         onDragOver={e => { e.preventDefault(); setUploadState('dragging'); }}
         onDragLeave={() => setUploadState(uploadState === 'dragging' ? 'idle' : uploadState)}
@@ -100,14 +127,15 @@ export default function FileDropZone({
         onClick={() => !isUploading && fileInputRef.current?.click()}
         className={`
           relative flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed
-          cursor-pointer select-none transition-all py-5
-          ${isDragging
-            ? 'border-[#0F52BA] bg-blue-50 scale-[1.01]'
-            : uploadState === 'done'
-              ? 'border-green-400 bg-green-50'
-              : uploadState === 'error'
-                ? 'border-red-400 bg-red-50'
-                : 'border-[#A6C5D7] hover:border-[#0F52BA] hover:bg-blue-50/40'
+          cursor-pointer select-none transition-all py-14
+          ${
+            isDragging
+              ? 'border-blue-500 bg-blue-500/10 scale-[1.02]'
+              : uploadState === 'done'
+                ? 'border-green-400 bg-green-500/10'
+                : uploadState === 'error'
+                  ? 'border-red-400 bg-red-500/10'
+                  : 'border-white/20 hover:border-blue-400 hover:bg-white/5'
           }
         `}
       >
@@ -121,51 +149,60 @@ export default function FileDropZone({
 
         {isUploading ? (
           <>
-            <div className="w-7 h-7 border-2 border-[#0F52BA]/30 border-t-[#0F52BA] rounded-full animate-spin" />
-            <p className="text-sm text-[#0F52BA] font-medium">Extracting text…</p>
+            <div className="w-6 h-6 border-2 border-white/30 border-t-blue-500 rounded-full animate-spin" />
+            <p className="text-sm text-blue-400 font-medium">
+              Extracting text…
+            </p>
           </>
         ) : uploadState === 'done' ? (
           <>
-            <FileText size={24} className="text-green-500" />
-            <p className="text-sm text-green-700 font-semibold">{fileName}</p>
-            <p className="text-xs text-green-600">{wordCount.toLocaleString()} words extracted</p>
+            <FileText size={24} className="text-green-400" />
+            <p className="text-sm text-green-300 font-semibold">{fileName}</p>
+            <p className="text-xs text-green-400">
+              {wordCount.toLocaleString()} words extracted
+            </p>
+
             <button
               onClick={e => { e.stopPropagation(); clearFile(); }}
-              className="absolute top-2 right-2 p-1 rounded-full hover:bg-red-100 text-red-400"
+              className="absolute top-2 right-2 p-1 rounded-full hover:bg-red-500/20 text-red-400"
             >
               <X size={14} />
             </button>
           </>
         ) : (
           <>
-            <Upload size={22} className={isDragging ? 'text-[#0F52BA]' : 'text-gray-400'} />
-            <p className={`text-sm font-medium ${isDragging ? 'text-[#0F52BA]' : 'text-gray-500'}`}>
-              {isDragging ? 'Drop to upload' : 'Drop PDF / DOCX / TXT or click to browse'}
+            <Upload size={22} className="text-white/40" />
+            <p className="text-sm text-white/60 font-medium">
+              {isDragging ? 'Drop to upload' : 'Drop PDF / DOCX / TXT or click'}
             </p>
-            <p className="text-xs text-gray-400">Max 5 MB</p>
+            <p className="text-xs text-white/30">Max 5 MB</p>
           </>
         )}
       </div>
 
-      {/* Error */}
+      {/* ERROR */}
       {errorMsg && (
-        <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+        <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
           ⚠ {errorMsg}
         </p>
       )}
 
-      {/* Manual text area (always visible so user can also paste) */}
+      {/* TEXTAREA */}
       <textarea
         value={value}
-        onChange={e => { onChange(e.target.value); if (uploadState === 'done') clearFile(); }}
+        onChange={e => {
+          onChange(e.target.value);
+          if (uploadState === 'done') clearFile();
+        }}
         placeholder={placeholder}
         rows={8}
-        className="w-full border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3
-                   outline-none text-black placeholder:text-gray-400 text-sm resize-none transition-colors"
+        className="w-full bg-white/10 border border-white/10 focus:border-blue-500 rounded-xl px-4 py-3
+                   outline-none text-white placeholder:text-white/40 text-sm resize-none transition"
       />
 
+      {/* WORD COUNT */}
       {value && (
-        <p className="text-xs text-gray-400 text-right">
+        <p className="text-xs text-white/40 text-right">
           {value.split(/\s+/).filter(Boolean).length.toLocaleString()} words
         </p>
       )}

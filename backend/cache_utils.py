@@ -1,5 +1,5 @@
 """
-cache_utils.py — AI response caching helpers for JobPilot
+cache_utils.py — AI response caching helpers for CareerOS
 
 Cache keys are SHA-256 hashes of (task_type + normalized_input), so identical
 inputs always resolve to the same key regardless of whitespace differences.

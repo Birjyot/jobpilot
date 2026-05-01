@@ -64,7 +64,7 @@ def get_or_create_user(email):
 
 @app.route('/', methods=['GET'])
 def home():
-    return jsonify({'message': 'JobPilot API', 'version': '3.0', 'status': 'running'})
+    return jsonify({'message': 'CareerOS API', 'version': '3.0', 'status': 'running'})
 
 @app.errorhandler(Exception)
 def handle_exception(e):
@@ -690,4 +690,4 @@ def gmail_sync():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5001)

@@ -5,8 +5,8 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata = {
-  title: 'JobPilot',
-  description: 'AI-Powered Job Application Tracker',
+  title: 'CareerOS',
+  description: 'AI-Powered Career & Job Application Management',
 }
 
 export default function RootLayout({

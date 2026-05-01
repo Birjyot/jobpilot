@@ -1,12 +1,18 @@
 'use client';
 
-import { AlertCircle, Brain, Briefcase, Calendar, Download, FileText, Info, LogIn, LogOut, MessageSquare, Send, Sparkles, Target, TrendingUp, X, Zap } from 'lucide-react';
+import { AlertCircle, Info, Sparkles, X} from 'lucide-react';
 import { signIn, signOut, useSession } from 'next-auth/react';
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import FileDropZone from '../components/FileDropZone';
 import ShareResultButton from '../components/ShareResultButton';
-import StatsChart from '../components/StatsChart';
+import JobCard from '../components/JobCard';
+import Header from '../components/Header';
+import DarkVeil from '../components/DarkVeil';
+import Dashboard from '../components/Dashboard';
+import Analytics from '../components/Analytics';
+import AITools from '../components/AITools';
+import Applications from '../components/Applications';
+import Image from "next/image"; 
 
 interface Job {
   id: number;
@@ -63,10 +69,13 @@ const statusBarColors: Record<string, string> = {
 export default function PremiumJobTracker() {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
   const { data: session } = useSession();
-  const [impersonatedEmail, setImpersonatedEmail] = useState<string | null>(null);
+  const [impersonatedUser, setImpersonatedUser] = useState<{ name: string; email: string; image?: string; } | null>(null);
   
   // Use impersonated email if set, otherwise real session email
-  const activeEmail = impersonatedEmail || session?.user?.email || '';
+  const activeUser = impersonatedUser || session?.user;
+  const activeEmail = activeUser?.email || '';
+  const activeName = activeUser?.name || '';
+  const activeImage = activeUser?.image || '';
 
   const [jobs, setJobs] = useState<Job[]>([]);
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -95,6 +104,8 @@ export default function PremiumJobTracker() {
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
   const [activeAiView, setActiveAiView] = useState<'chat' | 'ats'>('chat');
   const dragJobRef = useRef<Job | null>(null);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
 
   const [formData, setFormData] = useState({
     company: '', position: '', location: '', status: 'Applied',
@@ -308,483 +319,163 @@ export default function PremiumJobTracker() {
 
   const filteredJobs = jobs.filter(job => filter === 'All' || job.status === filter);
 
-  const JobCard = ({ job, compact = false }: { job: Job; compact?: boolean }) => (
-    <div draggable onDragStart={() => handleDragStart(job)} className={`bg-white rounded-xl shadow border border-gray-100 hover:shadow-md transition-all cursor-grab active:cursor-grabbing ${compact ? 'p-3' : 'p-6'}`}>
-      <div className="flex items-start justify-between mb-2 gap-2">
-        <div className="flex-1 min-w-0">
-          <p className={`font-bold text-[#000926] truncate ${compact ? 'text-sm' : 'text-xl'}`}>{job.position}</p>
-          <p className="text-[#0F52BA] font-medium text-sm truncate">{job.company}</p>
-          {job.location && <p className="text-gray-400 text-xs truncate">📍 {job.location}</p>}
-        </div>
-        {!compact && <span className={`px-3 py-1 rounded-full text-xs font-medium border-2 shrink-0 ${statusStyles[job.status]}`}>{job.status}</span>}
-      </div>
-      <p className="text-gray-400 text-xs mb-3">{job.applied_date}</p>
-      <div className="flex gap-2 flex-wrap">
-        <button onClick={() => generateCoverLetter(job.company, job.position)} className="text-[#0F52BA] text-xs hover:underline flex items-center gap-1"><FileText size={11} />Cover Letter</button>
-        <button onClick={() => generateInterviewQuestions(job.position)} className="text-[#0F52BA] text-xs hover:underline flex items-center gap-1"><Brain size={11} />Prep</button>
-        <button onClick={() => handleEdit(job)} className="text-gray-400 text-xs hover:underline ml-auto">Edit</button>
-        <button onClick={() => handleDelete(job.id)} className="text-red-400 text-xs hover:underline">Del</button>
-      </div>
-    </div>
-  );
-
   return (
-    <div className="min-h-screen bg-linear-to-br from-[#D6E6F3] via-[#A6C5D7] to-[#0F52BA]">
-      {/* Header */}
-      <div className="bg-[#000926] text-white shadow-2xl">
-        <div className="max-w-7xl mx-auto px-6 py-5">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <div className="bg-linear-to-r from-[#0F52BA] to-[#A6C5D7] p-2.5 rounded-xl"><Briefcase size={24} /></div>
-              <div>
-                <h1 className="text-2xl font-bold bg-linear-to-r from-white to-[#A6C5D7] bg-clip-text text-transparent">JobPilot</h1>
-                <p className="text-[#A6C5D7] text-xs">AI-Powered Job Application Management</p>
-              </div>
-            </div>
-            <div className="flex gap-3 items-center">
-              {/* Developer User Switcher */}
-              <select 
-                onChange={(e) => setImpersonatedEmail(e.target.value || null)}
-                className="bg-white/10 border border-white/20 text-white text-xs rounded-lg px-2 py-1 outline-none hover:bg-white/20 transition-all cursor-pointer"
-                title="Testing: Impersonate a dummy user"
-              >
-                <option value="" className="text-gray-900">Real Session</option>
-                <option value="alex.river@example.com" className="text-gray-900">Alex River (Test)</option>
-                <option value="sam.smith@tech.io" className="text-gray-900">Sam Smith (Test)</option>
-                <option value="jlee@dev.com" className="text-gray-900">Jordan Lee (Test)</option>
-              </select>
-
-              {session ? (
-                <>
-                  <div className="hidden md:block text-right mr-1">
-                    <p className="text-sm font-medium">{session.user?.name}</p>
-                    <p className="text-xs text-[#A6C5D7]">{session.user?.email}</p>
-                  </div>
-                  {session.user?.image && <img src={session.user.image} alt="Profile" className="w-9 h-9 rounded-full border-2 border-[#0F52BA]" />}
-                  <button onClick={() => signOut()} className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-3 py-2 sm:px-4 rounded-lg text-red-300 text-sm font-medium transition-all">
-                    <LogOut size={16} /> <span className="hidden sm:inline">Sign Out</span>
-                  </button>
-                </>
-              ) : (
-                <button onClick={() => signIn('google')} className="flex items-center gap-2 bg-[#0F52BA] hover:bg-[#0F52BA]/80 px-5 py-2 rounded-lg font-medium text-sm shadow-lg">
-                  <LogIn size={16} /> Sign In
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="flex gap-1 mt-5 border-b border-white/10 overflow-x-auto no-scrollbar whitespace-nowrap">
-            {['dashboard', 'applications', 'ai-tools', 'analytics'].map(tab => (
-              <button key={tab} onClick={() => setActiveTab(tab)} className={`px-5 py-3 font-medium text-sm transition-all capitalize shrink-0 ${activeTab === tab ? 'text-white border-b-2 border-[#0F52BA] bg-white/5' : 'text-[#A6C5D7] hover:text-white hover:bg-white/5'}`}>
-                {tab.replace('-', ' ')}
-              </button>
-            ))}
-          </div>
-        </div>
+    <div className="min-h-screen relative isolate">
+      <div className="fixed inset-0 -z-10" aria-hidden="true">
+        <DarkVeil
+          hueShift={32}
+          speed={1}
+          scanlineFrequency={0.5}
+          warpAmount={5}
+        />
       </div>
+
+      {/* Header */}
+      <Header
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        session={session}
+        activeName={activeName}
+        activeEmail={activeEmail}
+        activeImage={activeImage}
+        impersonatedUser={impersonatedUser}
+        setImpersonatedUser={setImpersonatedUser}
+        showProfileMenu={showProfileMenu}
+        setShowProfileMenu={setShowProfileMenu}
+        profileMenuRef={profileMenuRef}
+      />
 
       {/* Notification Banner */}
       <AnimatePresence>
         {notification && (
           <motion.div 
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
+            initial={{ opacity: 0, y: -30, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -30, scale: 0.96 }}
+            transition={{ duration: 0.25 }}
             className="fixed top-24 left-1/2 -translate-x-1/2 z-50 w-full max-w-lg px-4"
           >
-            <div className={`rounded-xl p-4 shadow-2xl flex items-center gap-3 border ${
-              notification.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
-              notification.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
-              'bg-blue-50 border-blue-200 text-blue-800'
-            }`}>
-              {notification.type === 'success' && <Sparkles size={20} />}
-              {notification.type === 'error' && <AlertCircle size={20} />}
-              {notification.type === 'info' && <Info size={20} />}
-              <p className="text-sm font-medium">{notification.message}</p>
-              <button onClick={() => setNotification(null)} className="ml-auto opacity-50 hover:opacity-100"><X size={16} /></button>
+            <div
+              className="flex items-center gap-3 p-4 rounded-2xl"
+              style={{
+                background: 'rgba(255,255,255,0.06)',
+                boxShadow: '0 20px 60px rgba(0,0,0,0.4)'
+              }}
+            >
+              <div
+                className={`w-9 h-9 rounded-xl flex items-center justify-center
+                ${
+                  notification.type === 'success'
+                    ? 'bg-green-500/15 text-green-400'
+                    : notification.type === 'error'
+                    ? 'bg-red-500/15 text-red-400'
+                    : 'bg-blue-500/15 text-blue-400'
+                }`}
+              >
+                {notification.type === 'success' && <Sparkles size={18} />}
+                {notification.type === 'error' && <AlertCircle size={18} />}
+                {notification.type === 'info' && <Info size={18} />}
+              </div>
+              <p className="text-sm font-medium text-white/90">
+                {notification.message}
+              </p>
+              <button
+                onClick={() => setNotification(null)}
+                className="ml-auto p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition"
+              >
+                <X size={16} />
+              </button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <div className="max-w-7xl mx-auto px-6 py-10">
-
+      <div className="max-w-[1400px] mx-auto px-4 py-10 ">
         {/* ── DASHBOARD ── */}
         {activeTab === 'dashboard' && (
-          <div>
-            {/* Gmail Sync Notification */}
-            {syncStatus && (
-              <div className="mb-6 p-4 bg-white/90 backdrop-blur-xl border border-green-200 rounded-2xl flex items-center justify-between shadow-lg">
-                <div className="flex items-center gap-3">
-                  <div className="bg-green-100 p-2 rounded-xl text-green-600">
-                    <Zap size={20} />
-                  </div>
-                  <p className="text-gray-800 font-medium text-sm">
-                    {syncStatus.added > 0 ? `Success! We added ${syncStatus.added} new applications from your Gmail.` : "Synced! Your dashboard is up to date."}
-                  </p>
-                </div>
-                <button onClick={() => setSyncStatus(null)} className="text-[#0F52BA] hover:text-[#000926] font-bold text-sm">Dismiss</button>
-              </div>
-            )}
-            {aiSuggestions.length > 0 && (
-              <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl p-4 shadow-xl border border-white/20">
-                <div className="flex items-center gap-2 mb-3"><Sparkles className="text-[#0F52BA]" size={18} /><h3 className="font-semibold text-[#000926] text-sm">AI Insights</h3></div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  {aiSuggestions.slice(0, 3).map((s, i) => (
-                    <div key={i} className={`p-3 rounded-xl border-l-4 text-sm ${s.priority === 'high' ? 'bg-red-50 border-red-500' : 'bg-blue-50 border-[#0F52BA]'}`}>{s.message}</div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {stats && (
-              <div>
-                <h3 className="text-lg font-bold text-[#000926] mb-4">Overview</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-                  <div className="md:col-span-2">
-                    <StatsChart data={STATUSES.map(s => ({ name: s, value: (stats.by_status as any)[s] || 0 }))} height="h-64" />
-                  </div>
-                  <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {[
-                      { label: 'Total', value: stats.total, icon: Target, color: 'from-[#0F52BA] to-[#A6C5D7]' },
-                      { label: 'Interviews', value: stats.by_status.Interview, icon: Calendar, color: 'from-purple-500 to-purple-300' },
-                      { label: 'Offers', value: stats.by_status.Offer, icon: TrendingUp, color: 'from-green-500 to-green-300' },
-                      { label: 'Response Rate', value: `${stats.response_rate}%`, icon: Sparkles, color: 'from-orange-500 to-orange-300' },
-                    ].map((s, i) => (
-                      <div key={i} className="bg-white/90 rounded-2xl p-5 shadow-xl border border-white/20 hover:scale-105 transition-transform flex flex-col">
-                        <div className={`inline-flex p-2.5 rounded-xl bg-linear-to-r ${s.color} mb-3 w-fit`}><s.icon className="text-white" size={20} /></div>
-                        <div className="text-3xl font-bold text-[#000926]">{s.value}</div>
-                        <div className="text-xs text-gray-500 mt-1">{s.label}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-            {!session && (
-              <div className="text-center py-20">
-                <Briefcase className="mx-auto text-white/50 mb-4" size={64} />
-                <h2 className="text-2xl font-bold text-white mb-2">Welcome to JobPilot</h2>
-                <p className="text-white/70 mb-6">Sign in with Google to start tracking your applications</p>
-                <button onClick={() => signIn('google')} className="bg-white text-[#0F52BA] font-bold px-8 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all">Sign In with Google</button>
-              </div>
-            )}
-          </div>
+          <Dashboard
+            activeName={activeName}
+            session={session}
+            stats={stats}
+            aiSuggestions={aiSuggestions}
+            syncStatus={syncStatus}
+            setSyncStatus={setSyncStatus}
+            STATUSES={STATUSES}
+          />
         )}
 
         {/* ── APPLICATIONS ── */}
         {activeTab === 'applications' && (
-          <div>
-            {/* Toolbar */}
-            <div className="flex gap-3 mb-6 flex-wrap items-center">
-              <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 bg-[#0F52BA] hover:bg-[#0F52BA]/90 text-white px-5 py-2.5 rounded-xl font-medium shadow-lg transition-all text-sm">
-                <span className="text-lg">+</span> {showForm ? 'Cancel' : 'Add Application'}
-              </button>
-              <button onClick={handleGmailSync} disabled={isSyncing} className="flex items-center gap-2 bg-white text-[#0F52BA] hover:bg-gray-50 px-5 py-2.5 rounded-xl font-medium shadow transition-all text-sm border border-[#0F52BA]/20 disabled:opacity-50">
-                {isSyncing ? <div className="w-4 h-4 border-2 border-[#0F52BA]/30 border-t-[#0F52BA] rounded-full animate-spin" /> : <Zap size={16} />}
-                {isSyncing ? 'Syncing...' : 'Sync Gmail'}
-              </button>
-              <select value={filter} onChange={e => setFilter(e.target.value)} className="bg-white/90 border-2 border-[#0F52BA]/20 rounded-xl px-4 py-2.5 font-medium text-[#000926] text-sm shadow">
-                <option>All</option>{STATUSES.map(s => <option key={s}>{s}</option>)}
-              </select>
-              <div className="flex bg-white/90 rounded-xl shadow border border-[#0F52BA]/20 overflow-hidden">
-                <button onClick={() => setViewMode('list')} className={`px-4 py-2.5 text-sm font-medium transition-all ${viewMode === 'list' ? 'bg-[#0F52BA] text-white' : 'text-[#0F52BA]'}`}>≡ List</button>
-                <button onClick={() => setViewMode('kanban')} className={`px-4 py-2.5 text-sm font-medium transition-all ${viewMode === 'kanban' ? 'bg-[#0F52BA] text-white' : 'text-[#0F52BA]'}`}>⊞ Kanban</button>
-              </div>
-              <button onClick={exportCSV} className="flex items-center gap-2 bg-white/90 hover:bg-white text-[#0F52BA] px-5 py-2.5 rounded-xl font-medium shadow text-sm transition-all ml-auto">
-                <Download size={16} /> Export CSV
-              </button>
-            </div>
+          <Applications
+            jobs={jobs}
+            filteredJobs={filteredJobs}
+            STATUSES={STATUSES}
+            statusStyles={statusStyles}
+            statusBorderColors={statusBorderColors}   // ✅ added
 
-            {/* Form */}
-            {showForm && (
-              <div className="bg-white/95 rounded-2xl p-6 shadow-2xl mb-6 border border-white/30">
-                <h2 className="text-xl font-bold text-[#000926] mb-5">{editingJob ? 'Edit Application' : 'New Application'}</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {[['company', 'Company *', 'text'], ['position', 'Position *', 'text'], ['location', 'Location', 'text'], ['salary_range', 'Salary Range', 'text']].map(([field, placeholder, type]) => (
-                    <input key={field} type={type} placeholder={placeholder} value={(formData as any)[field]} onChange={e => setFormData({ ...formData, [field]: e.target.value })} className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none text-black placeholder:text-gray-400 text-sm" />
-                  ))}
-                  <select value={formData.platform} onChange={e => setFormData({ ...formData, platform: e.target.value })} className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none text-black text-sm">
-                    {['LinkedIn', 'Indeed', 'Naukri', 'Internshala', 'Company Portal', 'Other'].map(p => <option key={p}>{p}</option>)}
-                  </select>
-                  <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })} className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none text-black text-sm">
-                    {STATUSES.map(s => <option key={s}>{s}</option>)}
-                  </select>
-                  <input type="date" value={formData.applied_date} onChange={e => setFormData({ ...formData, applied_date: e.target.value })} className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none text-black text-sm" />
-                  <input type="url" placeholder="Job URL" value={formData.job_url} onChange={e => setFormData({ ...formData, job_url: e.target.value })} className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none text-black placeholder:text-gray-400 text-sm" />
-                  <textarea placeholder="Notes" value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} rows={3} className="border-2 border-[#A6C5D7] focus:border-[#0F52BA] rounded-xl px-4 py-3 outline-none text-black placeholder:text-gray-400 text-sm md:col-span-2" />
-                  <div className="md:col-span-2 flex gap-3">
-                    <button onClick={handleSubmit} className="bg-[#0F52BA] text-white px-6 py-2.5 rounded-xl font-medium text-sm shadow">{editingJob ? 'Update' : 'Add'} Application</button>
-                    <button onClick={resetForm} className="bg-gray-100 text-gray-600 px-6 py-2.5 rounded-xl font-medium text-sm">Cancel</button>
-                  </div>
-                </div>
-              </div>
-            )}
+            showForm={showForm}
+            setShowForm={setShowForm}
+            editingJob={editingJob}
+            formData={formData}
+            setFormData={setFormData}
 
-            {/* List View */}
-            {viewMode === 'list' && (
-              <div className="space-y-4">
-                {filteredJobs.length === 0 ? (
-                  <div className="bg-white/90 rounded-2xl p-12 text-center shadow-xl">
-                    <Briefcase className="mx-auto text-gray-300 mb-4" size={56} />
-                    <p className="text-gray-400 text-lg">No applications yet. Add your first one!</p>
-                  </div>
-                ) : filteredJobs.map(job => (
-                  <div key={job.id} className="bg-white/95 rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all border border-white/30">
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <div className="flex items-center gap-3 mb-1">
-                          <h3 className="text-xl font-bold text-[#000926]">{job.position}</h3>
-                          <span className={`px-3 py-0.5 rounded-full text-xs font-medium border-2 ${statusStyles[job.status]}`}>{job.status}</span>
-                          {job.platform && <span className="px-2 py-0.5 bg-white border border-[#A6C5D7] rounded-full text-xs text-[#0F52BA] font-medium">{job.platform}</span>}
-                        </div>
-                        <p className="text-[#0F52BA] font-semibold">{job.company}</p>
-                        {job.location && <p className="text-gray-500 text-sm">📍 {job.location}</p>}
-                      </div>
-                    </div>
-                    <div className="flex flex-col sm:flex-row gap-2 sm:gap-6 text-sm text-gray-600 mb-3 bg-[#D6E6F3]/40 p-3 rounded-xl">
-                      <span><b>Applied:</b> {job.applied_date}</span>
-                      {job.salary_range && <span><b>Salary:</b> {job.salary_range}</span>}
-                    </div>
-                    {job.notes && <p className="text-gray-600 text-sm mb-3 p-3 bg-blue-50 rounded-xl border-l-4 border-[#0F52BA]">{job.notes}</p>}
-                    <div className="flex gap-3 flex-wrap items-center">
-                      {job.job_url && <a href={job.job_url} target="_blank" rel="noopener noreferrer" className="text-[#0F52BA] text-sm font-medium hover:underline">View Posting →</a>}
-                      <button onClick={() => generateCoverLetter(job.company, job.position)} className="text-[#0F52BA] text-sm font-medium flex items-center gap-1 hover:underline"><FileText size={14} />Cover Letter</button>
-                      <button onClick={() => generateInterviewQuestions(job.position)} className="text-[#0F52BA] text-sm font-medium flex items-center gap-1 hover:underline"><Brain size={14} />Interview Prep</button>
-                      <button onClick={() => handleEdit(job)} className="text-gray-500 text-sm font-medium ml-auto hover:underline">Edit</button>
-                      <button onClick={() => handleDelete(job.id)} className="text-red-500 text-sm font-medium hover:underline">Delete</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            handleSubmit={handleSubmit}
+            resetForm={resetForm}
+            handleDelete={handleDelete}
+            handleEdit={handleEdit}
 
-            {/* Kanban View */}
-            {viewMode === 'kanban' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                {STATUSES.map(status => (
-                  <div key={status} onDragOver={e => e.preventDefault()} onDrop={() => handleDrop(status)}
-                    className={`bg-white/70 backdrop-blur-xl rounded-2xl p-3 shadow-xl border-t-4 ${statusBorderColors[status]} min-h-[400px]`}>
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-bold text-[#000926] text-sm">{status}</h3>
-                      <span className="bg-white rounded-full px-2 py-0.5 text-xs font-bold text-gray-500 shadow">{jobs.filter(j => j.status === status).length}</span>
-                    </div>
-                    <div className="space-y-2">
-                      {jobs.filter(j => j.status === status).map(job => <JobCard key={job.id} job={job} compact />)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+            generateCoverLetter={generateCoverLetter}
+            generateInterviewQuestions={generateInterviewQuestions}
+
+            filter={filter}
+            setFilter={setFilter}
+
+            viewMode={viewMode}
+            setViewMode={setViewMode}
+
+            exportCSV={exportCSV}
+
+            handleGmailSync={handleGmailSync}
+            isSyncing={isSyncing}
+
+            handleDragStart={handleDragStart}
+            handleDrop={handleDrop}          
+            JobCard={JobCard}                
+          />
         )}
 
         {/* ── AI TOOLS ── */}
         {activeTab === 'ai-tools' && (
-          <div className="space-y-5">
-            <div className="flex gap-3">
-              <button onClick={() => setActiveAiView('chat')} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition-all ${activeAiView === 'chat' ? 'bg-[#0F52BA] text-white shadow-lg' : 'bg-white/90 text-[#0F52BA] hover:bg-white'}`}>
-                <MessageSquare size={16} /> AI Career Coach
-              </button>
-              <button onClick={() => setActiveAiView('ats')} className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition-all ${activeAiView === 'ats' ? 'bg-[#0F52BA] text-white shadow-lg' : 'bg-white/90 text-[#0F52BA] hover:bg-white'}`}>
-                <Target size={16} /> ATS Scanner
-              </button>
-            </div>
+          <AITools
+            activeAiView={activeAiView}
+            setActiveAiView={setActiveAiView}
 
-            {activeAiView === 'chat' && (
-              <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/20 overflow-hidden flex flex-col h-[500px]">
-                <div className="bg-[#000926] p-4 flex items-center gap-2 text-white">
-                  <Brain size={18} className="text-[#0F52BA]" />
-                  <span className="font-bold text-sm">AI Career Coach</span>
-                  <span className="ml-auto flex items-center gap-1.5 text-xs text-[#A6C5D7] bg-white/10 px-2 py-1 rounded">
-                    <Zap size={11} />
-                    {chatProvider ? chatProvider.charAt(0).toUpperCase() + chatProvider.slice(1) : 'Multi-Provider'}
-                  </span>
-                </div>
-                <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-gray-50/50">
-                  {chatMessages.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center p-8 opacity-50">
-                      <MessageSquare size={28} className="mb-3 text-[#0F52BA]" />
-                      <p className="font-medium text-gray-600">Your Personal Career Mentor</p>
-                      <p className="text-sm text-gray-400 mt-1">Ask anything about interviews, salary negotiation, or your applications!</p>
-                    </div>
-                  ) : chatMessages.map((msg, i) => (
-                    <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[85%] rounded-2xl p-4 text-sm shadow-sm ${msg.role === 'user' ? 'bg-[#0F52BA] text-white rounded-tr-none' : msg.role === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'}`}>
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
-                      </div>
-                    </div>
-                  ))}
-                  {isChatLoading && (
-                    <div className="flex justify-start">
-                      <div className="bg-white shadow-sm border border-gray-100 rounded-2xl rounded-tl-none p-3 flex items-center gap-1.5">
-                        {[0, 150, 300].map(d => <div key={d} className="w-2 h-2 bg-[#0F52BA] rounded-full animate-bounce" style={{ animationDelay: `${d}ms` }} />)}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="p-4 border-t border-gray-100 bg-white">
-                  <div className="flex gap-2">
-                    <input type="text" value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleChatSend()} placeholder="Ask about interviews, salary, or career strategy..." className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-[#0F52BA] outline-none text-black" />
-                    <button onClick={handleChatSend} disabled={isChatLoading || !chatInput.trim()} className="bg-[#0F52BA] text-white p-2.5 rounded-xl hover:bg-[#000926] disabled:opacity-50"><Send size={18} /></button>
-                  </div>
-                </div>
-              </div>
-            )}
+            chatMessages={chatMessages}
+            chatInput={chatInput}
+            setChatInput={setChatInput}
+            handleChatSend={handleChatSend}
+            isChatLoading={isChatLoading}
+            chatProvider={chatProvider}
 
-            {activeAiView === 'ats' && (
-              <div className="space-y-5">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                  {/* Resume upload — supports drag & drop PDF/DOCX/TXT or paste */}
-                  <FileDropZone
-                    label="📄 Your Resume"
-                    value={resumeText}
-                    onChange={setResumeText}
-                    placeholder="Paste resume text, or drag & drop a PDF / DOCX / TXT file…"
-                    apiBase={API_BASE_URL}
-                    authHeaders={authHeaders}
-                  />
-                  {/* Job description upload — same component */}
-                  <FileDropZone
-                    label="💼 Job Description"
-                    value={jobDescription}
-                    onChange={setJobDescription}
-                    placeholder="Paste the job description, or drag & drop a file…"
-                    apiBase={API_BASE_URL}
-                    authHeaders={authHeaders}
-                  />
-                </div>
-                <button onClick={handleATSScan} disabled={isMatchLoading || !resumeText.trim() || !jobDescription.trim()} className="w-full bg-[#0F52BA] hover:bg-[#000926] disabled:opacity-50 text-white py-4 rounded-xl font-bold text-base shadow-lg transition-all flex items-center justify-center gap-3">
-                  {isMatchLoading ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Scanning...</> : <><Target size={20} />Run ATS Scan</>}
-                </button>
-                {matchResult && !matchResult.error && (
-                  <div className="space-y-4">
-                    <div className="bg-white/90 rounded-2xl p-6 shadow-xl border border-white/30">
-                      <div className="flex items-center justify-between mb-3">
-                        <div>
-                          <h3 className="font-bold text-[#000926]">ATS Match Score</h3>
-                          {matchResult.provider && (
-                            <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-                              <Zap size={10} /> Analysed by {matchResult.provider}
-                              {matchResult.cached && <span className="ml-1 text-green-500">(cached)</span>}
-                            </p>
-                          )}
-                        </div>
-                        <span className={`text-4xl font-black ${matchResult.match_score >= 70 ? 'text-green-500' : matchResult.match_score >= 40 ? 'text-orange-500' : 'text-red-500'}`}>{matchResult.match_score}%</span>
-                      </div>
-                      <div className="w-full bg-gray-100 rounded-full h-4 mb-3">
-                        <div className={`h-4 rounded-full transition-all duration-700 ${matchResult.match_score >= 70 ? 'bg-green-500' : matchResult.match_score >= 40 ? 'bg-orange-500' : 'bg-red-500'}`} style={{ width: `${matchResult.match_score}%` }} />
-                      </div>
-                      {matchResult.summary && <p className="text-gray-600 text-sm mb-4">{matchResult.summary}</p>}
-                      {/* Share Results button */}
-                      <ShareResultButton
-                        data={matchResult}
-                        label={`ATS Match: ${matchResult.match_score}%`}
-                        apiBase={API_BASE_URL}
-                        authHeaders={authHeaders}
-                      />
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="bg-white/90 rounded-2xl p-5 shadow-xl border border-white/30">
-                        <h3 className="text-sm font-bold text-green-600 mb-3">✅ Matched Keywords</h3>
-                        <div className="flex flex-wrap gap-2">{matchResult.matched_keywords?.map((kw: string, i: number) => <span key={i} className="px-2.5 py-1 bg-green-50 text-green-700 border border-green-200 rounded-full text-xs font-medium">{kw}</span>)}</div>
-                      </div>
-                      <div className="bg-white/90 rounded-2xl p-5 shadow-xl border border-white/30">
-                        <h3 className="text-sm font-bold text-red-600 mb-3">❌ Missing Keywords</h3>
-                        <div className="flex flex-wrap gap-2">{matchResult.missing_keywords?.map((kw: string, i: number) => <span key={i} className="px-2.5 py-1 bg-red-50 text-red-700 border border-red-200 rounded-full text-xs font-medium">{kw}</span>)}</div>
-                      </div>
-                    </div>
-                    <div className="bg-white/90 rounded-2xl p-5 shadow-xl border border-white/30">
-                      <h3 className="text-sm font-bold text-[#0F52BA] mb-3">💡 Improvement Suggestions</h3>
-                      <div className="space-y-2">{matchResult.suggestions?.map((s: string, i: number) => (
-                        <div key={i} className="flex gap-3 p-3 bg-blue-50 rounded-xl"><span className="text-[#0F52BA] font-bold text-sm">{i + 1}.</span><p className="text-gray-700 text-sm">{s}</p></div>
-                      ))}</div>
-                    </div>
-                  </div>
-                )}
-                {matchResult?.error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-600 text-sm">Error: {matchResult.error}</div>}
-              </div>
-            )}
-          </div>
-        )}
+            resumeText={resumeText}
+            setResumeText={setResumeText}
+            jobDescription={jobDescription}
+            setJobDescription={setJobDescription}
+            handleATSScan={handleATSScan}
+            isMatchLoading={isMatchLoading}
+            matchResult={matchResult}
+
+            API_BASE_URL={API_BASE_URL}
+            authHeaders={authHeaders}
+            />
+          )}
 
         {/* ── ANALYTICS ── */}
         {activeTab === 'analytics' && (
-          <div className="space-y-5">
-            {!trends || trends.metrics.total_applications === 0 ? (
-              <div className="bg-white/90 rounded-2xl p-16 text-center shadow-xl">
-                <TrendingUp className="mx-auto text-gray-300 mb-4" size={56} />
-                <p className="text-gray-400 text-lg">Add applications to see your analytics!</p>
-              </div>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  {[
-                    { label: 'Total Applications', value: trends.metrics.total_applications, icon: Target, color: 'from-[#0F52BA] to-[#A6C5D7]' },
-                    { label: 'Interview Rate', value: `${trends.metrics.interview_rate}%`, icon: Calendar, color: 'from-purple-500 to-purple-300' },
-                    { label: 'Offer Rate', value: `${trends.metrics.offer_rate}%`, icon: TrendingUp, color: 'from-green-500 to-green-300' },
-                  ].map((s, i) => (
-                    <div key={i} className="bg-white/90 rounded-2xl p-5 shadow-xl border border-white/20 flex items-center gap-4">
-                      <div className={`p-3 rounded-xl bg-linear-to-r ${s.color}`}><s.icon className="text-white" size={24} /></div>
-                      <div><div className="text-3xl font-bold text-[#000926]">{s.value}</div><div className="text-sm text-gray-500">{s.label}</div></div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="bg-white/90 rounded-2xl p-5 shadow-xl border border-white/30">
-                  <h3 className="font-bold text-[#000926] mb-4">Application Pipeline</h3>
-                  <div className="space-y-3">
-                    {STATUSES.map(status => {
-                      const count = trends.status_distribution[status] || 0;
-                      const pct = trends.metrics.total_applications > 0 ? Math.round(count / trends.metrics.total_applications * 100) : 0;
-                      return (
-                        <div key={status} className="flex items-center gap-3">
-                          <span className="text-sm font-medium text-gray-600 w-20">{status}</span>
-                          <div className="flex-1 bg-gray-100 rounded-full h-7 overflow-hidden">
-                            <div className={`h-7 rounded-full flex items-center justify-end pr-3 text-xs text-white font-bold ${statusBarColors[status]}`} style={{ width: `${Math.max(pct, 6)}%` }}>{count}</div>
-                          </div>
-                          <span className="text-sm text-gray-400 w-9 text-right">{pct}%</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {trends.platform_distribution && Object.keys(trends.platform_distribution).length > 0 && (
-                  <div className="bg-white/90 rounded-2xl p-5 shadow-xl border border-white/30">
-                    <h3 className="font-bold text-[#000926] mb-4">Applications by Platform</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      {Object.entries(trends.platform_distribution || {}).map(([p, c]) => (
-                        <div key={p} className="bg-blue-50 rounded-xl p-4 text-center border border-blue-100">
-                          <div className="text-2xl font-bold text-[#0F52BA]">{c as number}</div>
-                          <div className="text-sm text-gray-500 mt-1">{p}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {trends.monthly_applications && Object.keys(trends.monthly_applications).length > 0 && (
-                  <div className="bg-white/90 rounded-2xl p-5 shadow-xl border border-white/30">
-                    <h3 className="font-bold text-[#000926] mb-4">Monthly Applications</h3>
-                    <div className="overflow-x-auto no-scrollbar">
-                      <div className="flex items-end gap-2 h-36 min-w-[400px]">
-                        {Object.entries(trends.monthly_applications || {}).map(([month, count]) => {
-                          const max = Math.max(...Object.values(trends.monthly_applications || {}) as number[]);
-                          const h = max > 0 ? Math.max(((count as number) / max) * 100, 8) : 8;
-                          return (
-                            <div key={month} className="flex-1 flex flex-col items-center gap-1">
-                              <span className="text-xs font-bold text-[#0F52BA]">{count as number}</span>
-                              <div className="w-full bg-[#0F52BA] rounded-t-lg" style={{ height: `${h}%` }} />
-                              <span className="text-xs text-gray-400 text-center leading-tight">{month}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+          <Analytics
+            trends={trends}
+            STATUSES={STATUSES}
+          />
         )}
 
         {/* Cover Letter Modal */}
@@ -850,6 +541,42 @@ export default function PremiumJobTracker() {
           </div>
         )}
       </div>
+
+      {/* Floating AI Bubble */}
+      <a
+        href="http://localhost:3001/"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed bottom-6 right-6 z-50 group"
+      >
+        <div
+          className="w-16 h-16 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300"
+          style={{
+            background: 'rgba(255,255,255,0.08)',
+            backdropFilter: 'blur(20px)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            boxShadow: '0 10px 40px rgba(0,0,0,0.5)'
+          }}
+        >
+          {/* <img
+            src="/logo.svg"
+            alt="AI Assistant"
+            className="w-10 h-10 object-contain"
+          /> */}
+          <Image
+            src="/logo.svg"
+            alt="AI Assistant"
+            width={40}
+            height={40}
+            className="object-contain"
+          />
+        </div>
+
+        {/* Hover Tooltip */}
+        <span className="absolute -top-7 -translate-y-1/2 px-3 py-1.5 text-xs rounded-lg bg-[#1a1c20] text-white opacity-0 group-hover:opacity-100 transition">
+          Prepify
+        </span>
+      </a>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 """
-text_utils.py — Text preprocessing for JobPilot (reduces AI token cost)
+text_utils.py — Text preprocessing for CareerOS (reduces AI token cost)
 """
 
 import re
