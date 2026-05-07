@@ -405,6 +405,7 @@ export default function PremiumJobTracker() {
             syncStatus={syncStatus}
             setSyncStatus={setSyncStatus}
             STATUSES={STATUSES}
+            onTakeAction={() => {}}
           />
         )}
 
