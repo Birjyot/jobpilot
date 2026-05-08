@@ -555,8 +555,8 @@ def gmail_auth_start():
         return jsonify({"error": "Unauthorized"}), 401
 
     # In Production, this would be your Render URL
-    # In Local, it's localhost:5000
-    redirect_uri = "http://localhost:5000/api/gmail/callback"
+    # In Local, it's localhost:5001
+    redirect_uri = "http://localhost:5001/api/gmail/callback"
     if "onrender.com" in request.host_url:
         redirect_uri = "https://jobpilot-30wb.onrender.com/api/gmail/callback"
 
@@ -601,7 +601,7 @@ def gmail_callback():
         return "Error: Invalid state or session expired. Please try again.", 400
 
     try:
-        redirect_uri = "http://localhost:5000/api/gmail/callback"
+        redirect_uri = "http://localhost:5001/api/gmail/callback"
         if "onrender.com" in request.host_url:
             redirect_uri = "https://jobpilot-30wb.onrender.com/api/gmail/callback"
 
@@ -707,5 +707,5 @@ def gmail_sync():
         return jsonify({'error': str(e)}), 500
 
 
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5001)

@@ -67,7 +67,7 @@ const statusBarColors: Record<string, string> = {
 };
 
 export default function PremiumJobTracker() {
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
   const { data: session } = useSession();
   const [impersonatedUser, setImpersonatedUser] = useState<{ name: string; email: string; image?: string; } | null>(null);
   
@@ -405,6 +405,7 @@ export default function PremiumJobTracker() {
             syncStatus={syncStatus}
             setSyncStatus={setSyncStatus}
             STATUSES={STATUSES}
+            onTakeAction={() => {}}
           />
         )}
 
@@ -549,7 +550,7 @@ export default function PremiumJobTracker() {
 
       {/* Floating AI Bubble */}
       <a
-        href="http://localhost:3001/"
+        href="https://prepify-one.vercel.app/"
         target="_blank"
         rel="noopener noreferrer"
         className="fixed bottom-6 right-6 z-50 group"
