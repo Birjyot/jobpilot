@@ -558,7 +558,7 @@ def gmail_auth_start():
     # In Local, it's localhost:5001
     redirect_uri = "http://localhost:5001/api/gmail/callback"
     if "onrender.com" in request.host_url:
-        redirect_uri = "https://jobpilot-30wb.onrender.com/api/gmail/callback"
+        redirect_uri = "https://careeros-xooj.onrender.com/api/gmail/callback"
 
     from google_auth_oauthlib.flow import Flow
     import json
@@ -611,7 +611,7 @@ def gmail_callback():
     try:
         redirect_uri = "http://localhost:5001/api/gmail/callback"
         if "onrender.com" in request.host_url:
-            redirect_uri = "https://jobpilot-30wb.onrender.com/api/gmail/callback"
+            redirect_uri = "https://careeros-xooj.onrender.com/api/gmail/callback"
 
         from google_auth_oauthlib.flow import Flow
         creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
