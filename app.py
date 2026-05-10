@@ -746,11 +746,22 @@ def gmail_sync():
         print(f"[GmailSync] Success! Synced {added_count} items (added or updated).")
         return jsonify({'success': True, 'added': added_count})
         
+    except RuntimeError as e:
+        # Auth/token errors from get_gmail_service — clear credentials and ask user to re-auth
+        err_str = str(e)
+        print(f"[GmailSync] Auth error: {err_str}")
+        needs_reauth_keywords = ["invalid_grant", "refresh_token", "re-auth", "Token refresh failed", "expired"]
+        if any(kw in err_str for kw in needs_reauth_keywords):
+            user.gmail_credentials = None
+            db.session.commit()
+        return jsonify({'error': 'needs_auth', 'detail': err_str}), 200
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         if "invalid_grant" in str(e) or "refresh_token" in str(e):
-             user.gmail_credentials = None
-             db.session.commit()
-             return jsonify({'error': 'needs_auth'}), 200
+            user.gmail_credentials = None
+            db.session.commit()
+            return jsonify({'error': 'needs_auth'}), 200
         return jsonify({'error': str(e)}), 500
 
 

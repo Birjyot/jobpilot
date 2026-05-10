@@ -48,14 +48,38 @@ def get_gmail_service_local():
 def get_gmail_service(creds_json):
     """
     PRODUCTION: Returns a Gmail service from stored JSON credentials (from DB).
+    Raises RuntimeError with a clear message if credentials are invalid or expired.
     """
     if not creds_json:
-        return None
-    creds_data = json.loads(creds_json)
-    creds = Credentials.from_authorized_user_info(creds_data, SCOPES)
-    if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-    return build('gmail', 'v1', credentials=creds)
+        raise RuntimeError("No Gmail credentials stored for this user.")
+
+    try:
+        creds_data = json.loads(creds_json)
+    except Exception as e:
+        raise RuntimeError(f"Stored Gmail credentials are malformed JSON: {e}")
+
+    try:
+        # Don't pass scopes here — let it use whatever scopes were granted during OAuth
+        # Passing mismatched scopes raises an error even with valid tokens
+        creds = Credentials.from_authorized_user_info(creds_data)
+    except Exception as e:
+        raise RuntimeError(f"Failed to load Gmail credentials: {e}")
+
+    if creds.expired:
+        if creds.refresh_token:
+            try:
+                print("[GmailService] Token expired, refreshing...")
+                creds.refresh(Request())
+                print("[GmailService] Token refreshed successfully.")
+            except Exception as e:
+                raise RuntimeError(f"Token refresh failed (user needs to re-auth): {e}")
+        else:
+            raise RuntimeError("Token expired and no refresh_token available. User must re-authenticate.")
+
+    try:
+        return build('gmail', 'v1', credentials=creds)
+    except Exception as e:
+        raise RuntimeError(f"Failed to build Gmail API service: {e}")
 
 def sync_job_emails(service):
     """Searches for job application emails and extracts structured data using AI."""
