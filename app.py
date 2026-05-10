@@ -26,7 +26,7 @@ from backend.file_parser import parse_uploaded_file
 # ── App setup ────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 # Explicitly allow all origins and the custom X-User-Email header
-CORS(app, resources={r"/api/*": {"origins": "*"}}, allow_headers=["Content-Type", "X-User-Email"])
+CORS(app, resources={r"/api/*": {"origins": "https://careeros-prepify.netlify.app"}}, allow_headers=["Content-Type", "X-User-Email"])
 
 app.add_url_rule('/api/jobs/parse', view_func=parse_job_url, methods=['POST'])
 
