@@ -568,9 +568,17 @@ def gmail_auth_start():
     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
     if creds_json:
         creds_info = json.loads(creds_json)
-        flow = Flow.from_client_config(creds_info, scopes=['https://www.googleapis.com/auth/gmail.readonly'], redirect_uri=redirect_uri)
+        flow = Flow.from_client_config(
+            creds_info,
+            scopes=['https://www.googleapis.com/auth/gmail.readonly'],
+            redirect_uri=redirect_uri
+        )
     else:
-        flow = Flow.from_client_secrets_file('credentials.json', scopes=['https://www.googleapis.com/auth/gmail.readonly'], redirect_uri=redirect_uri)
+        flow = Flow.from_client_secrets_file(
+            'credentials.json',
+            scopes=['https://www.googleapis.com/auth/gmail.readonly'],
+            redirect_uri=redirect_uri
+        )
 
     auth_url, state = flow.authorization_url(prompt='consent', access_type='offline')
     
