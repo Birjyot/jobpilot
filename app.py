@@ -548,48 +548,87 @@ def resolve_short_link(code):
 # # Gmail Auth State
 _gmail_auth_state = {}
 
+@app.route("/api/gmail/debug", methods=["GET"])
+def gmail_debug():
+    """Diagnostic endpoint — check Gmail OAuth config without triggering the flow."""
+    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+    has_env_var = bool(creds_json)
+    json_valid = False
+    json_error = None
+    has_local_file = os.path.exists('credentials.json')
+
+    if creds_json:
+        try:
+            json.loads(creds_json)
+            json_valid = True
+        except Exception as e:
+            json_error = str(e)
+
+    return jsonify({
+        "GOOGLE_CREDENTIALS_JSON_set": has_env_var,
+        "GOOGLE_CREDENTIALS_JSON_valid_json": json_valid,
+        "GOOGLE_CREDENTIALS_JSON_parse_error": json_error,
+        "credentials_json_file_exists": has_local_file,
+        "host_url": request.host_url,
+        "redirect_uri_would_use": (
+            "https://careeros-xooj.onrender.com/api/gmail/callback"
+            if "onrender.com" in request.host_url
+            else "http://localhost:5001/api/gmail/callback"
+        )
+    })
+
+
 @app.route("/api/gmail/auth-start", methods=["POST"])
 def gmail_auth_start():
     user_email = get_user_id()
     if not user_email:
         return jsonify({"error": "Unauthorized"}), 401
 
-    # In Production, this would be your Render URL
-    # In Local, it's localhost:5001
     redirect_uri = "http://localhost:5001/api/gmail/callback"
     if "onrender.com" in request.host_url:
         redirect_uri = "https://careeros-xooj.onrender.com/api/gmail/callback"
 
     from google_auth_oauthlib.flow import Flow
-    import json
-    
-    # Priority 1: Environment Variable (for Render/Production)
-    # Priority 2: Local File (for Local Dev)
-    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-    if creds_json:
-        creds_info = json.loads(creds_json)
-        flow = Flow.from_client_config(
-            creds_info,
-            scopes=['https://www.googleapis.com/auth/gmail.readonly'],
-            redirect_uri=redirect_uri
-        )
-    else:
-        flow = Flow.from_client_secrets_file(
-            'credentials.json',
-            scopes=['https://www.googleapis.com/auth/gmail.readonly'],
-            redirect_uri=redirect_uri
-        )
 
-    auth_url, state = flow.authorization_url(prompt='consent', access_type='offline')
-    
-    # Store state and PKCE verifier to verify callback
-    _gmail_auth_state[user_email] = {
-        "state": state, 
-        "status": "pending",
-        "code_verifier": getattr(flow, 'code_verifier', None)
-    }
-    
-    return jsonify({"auth_url": auth_url, "status": "pending"})
+    try:
+        # Priority 1: Environment Variable (for Render/Production)
+        # Priority 2: Local File (for Local Dev)
+        creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+        if creds_json:
+            try:
+                creds_info = json.loads(creds_json)
+            except Exception as e:
+                return jsonify({"error": f"GOOGLE_CREDENTIALS_JSON is set but contains invalid JSON: {e}"}), 500
+            flow = Flow.from_client_config(
+                creds_info,
+                scopes=['https://www.googleapis.com/auth/gmail.readonly'],
+                redirect_uri=redirect_uri
+            )
+        else:
+            if not os.path.exists('credentials.json'):
+                return jsonify({
+                    "error": "OAuth credentials not configured. Set the GOOGLE_CREDENTIALS_JSON environment variable on Render."
+                }), 500
+            flow = Flow.from_client_secrets_file(
+                'credentials.json',
+                scopes=['https://www.googleapis.com/auth/gmail.readonly'],
+                redirect_uri=redirect_uri
+            )
+
+        auth_url, state = flow.authorization_url(prompt='consent', access_type='offline')
+
+        _gmail_auth_state[user_email] = {
+            "state": state,
+            "status": "pending",
+            "code_verifier": getattr(flow, 'code_verifier', None)
+        }
+
+        return jsonify({"auth_url": auth_url, "status": "pending"})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Failed to start Gmail auth: {str(e)}"}), 500
 
 @app.route("/api/gmail/callback")
 def gmail_callback():
